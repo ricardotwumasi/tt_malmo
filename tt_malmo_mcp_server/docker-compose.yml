@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # MCP Server - coordinates all agents
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: malmo-mcp-server
+    ports:
+      - "8000:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8000
+      - ENVIRONMENT=production
+      - DEBUG=false
+    volumes:
+      - ./logs:/app/logs
+      - ./agent_data:/app/agent_data
+      - ./metrics:/app/metrics
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Minecraft/Malmo Server for Agent 1
+  malmo-server-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.malmo
+    container_name: malmo-server-1
+    environment:
+      - MALMO_PORT=9000
+      - DISPLAY=:99
+    ports:
+      - "9000:9000"
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    command: python3 -c "import malmoenv.bootstrap; malmoenv.bootstrap.launch_minecraft(9000)"
+
+  # Minecraft/Malmo Server for Agent 2
+  malmo-server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.malmo
+    container_name: malmo-server-2
+    environment:
+      - MALMO_PORT=9001
+      - DISPLAY=:99
+    ports:
+      - "9001:9001"
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    command: python3 -c "import malmoenv.bootstrap; malmoenv.bootstrap.launch_minecraft(9001)"
+
+  # Minecraft/Malmo Server for Agent 3
+  malmo-server-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.malmo
+    container_name: malmo-server-3
+    environment:
+      - MALMO_PORT=9002
+      - DISPLAY=:99
+    ports:
+      - "9002:9002"
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    command: python3 -c "import malmoenv.bootstrap; malmoenv.bootstrap.launch_minecraft(9002)"
+
+  # Minecraft/Malmo Server for Agent 4
+  malmo-server-4:
+    build:
+      context: .
+      dockerfile: Dockerfile.malmo
+    container_name: malmo-server-4
+    environment:
+      - MALMO_PORT=9003
+      - DISPLAY=:99
+    ports:
+      - "9003:9003"
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    command: python3 -c "import malmoenv.bootstrap; malmoenv.bootstrap.launch_minecraft(9003)"
+
+  # Minecraft/Malmo Server for Agent 5
+  malmo-server-5:
+    build:
+      context: .
+      dockerfile: Dockerfile.malmo
+    container_name: malmo-server-5
+    environment:
+      - MALMO_PORT=9004
+      - DISPLAY=:99
+    ports:
+      - "9004:9004"
+    networks:
+      - malmo-network
+    restart: unless-stopped
+    command: python3 -c "import malmoenv.bootstrap; malmoenv.bootstrap.launch_minecraft(9004)"
+
+networks:
+  malmo-network:
+    driver: bridge
+
+volumes:
+  logs:
+  agent_data:
+  metrics:

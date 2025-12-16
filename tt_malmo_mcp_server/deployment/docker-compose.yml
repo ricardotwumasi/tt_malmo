@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  # Malmo Minecraft Server
+  malmo:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.malmo
+    container_name: malmo_server
+    ports:
+      - "9000-9010:9000-9010"  # Malmo agent ports
+      - "10000:10000"          # Malmo server port
+    environment:
+      - DISPLAY=:99
+    volumes:
+      - malmo_worlds:/malmo/worlds
+    networks:
+      - malmo_network
+    restart: unless-stopped
+
+  # MCP Server (FastAPI + PIANO Architecture)
+  mcp_server:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.mcp_server
+    container_name: mcp_server
+    ports:
+      - "8000:8000"  # FastAPI server
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - DATABASE_URL=postgresql://malmo:malmo_password@postgres:5432/malmo_benchmarks
+      - MALMO_HOST=malmo
+      - MALMO_PORT=10000
+    depends_on:
+      - malmo
+      - postgres
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - malmo_network
+    restart: unless-stopped
+
+  # PostgreSQL Database for Benchmarking Metrics
+  postgres:
+    image: postgres:15
+    container_name: malmo_postgres
+    environment:
+      - POSTGRES_USER=malmo
+      - POSTGRES_PASSWORD=malmo_password
+      - POSTGRES_DB=malmo_benchmarks
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - malmo_network
+    restart: unless-stopped
+
+volumes:
+  malmo_worlds:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  malmo_network:
+    driver: bridge
