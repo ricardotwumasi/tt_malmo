@@ -1,0 +1,28 @@
+version: '3.8'
+
+# Docker Compose - Malmo Only (for local development)
+#
+# Use this when you want to run Minecraft/Malmo in Docker
+# but run the MCP server locally (for faster development)
+#
+# Usage:
+#   docker compose -f docker-compose.malmo-only.yml up -d
+#   docker compose -f docker-compose.malmo-only.yml logs -f
+
+services:
+  malmo:
+    platform: linux/amd64
+    build:
+      context: ../..
+      dockerfile: tt_malmo_mcp_server/deployment/Dockerfile.malmo
+    container_name: malmo_minecraft
+    ports:
+      - "9000:9000"   # MalmoEnv port - connect Python here
+      - "5900:5900"   # VNC for debugging (optional)
+    environment:
+      - DISPLAY=:99
+      - MALMO_PORT=9000
+      - ENABLE_VNC=true  # Enable VNC so you can see Minecraft
+    volumes:
+      - ../../malmo:/opt/malmo:rw
+    restart: unless-stopped

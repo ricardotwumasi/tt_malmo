@@ -1,0 +1,105 @@
+version: '3.8'
+
+# Docker Compose for Malmo AI Benchmark
+#
+# Services:
+#   - malmo: Minecraft server with Malmo mod (Linux x86_64)
+#   - mcp_server: FastAPI server with PIANO architecture
+#   - postgres: Database for benchmark metrics
+#
+# Usage:
+#   docker compose up -d              # Start all services
+#   docker compose up malmo           # Start only Minecraft
+#   docker compose logs -f malmo      # View Minecraft logs
+#   docker compose down               # Stop all services
+
+services:
+  # Malmo Minecraft Server
+  # Runs headlessly on Linux with virtual display (Xvfb)
+  malmo:
+    platform: linux/amd64  # Required: Minecraft/Java requires x86_64
+    build:
+      context: ../..
+      dockerfile: tt_malmo_mcp_server/deployment/Dockerfile.malmo
+    container_name: malmo_minecraft
+    ports:
+      - "9000:9000"   # MalmoEnv primary port
+      - "9001:9001"   # Additional agent ports
+      - "9002:9002"
+      - "5900:5900"   # VNC (optional, for debugging)
+    environment:
+      - DISPLAY=:99
+      - MALMO_PORT=9000
+      - ENABLE_VNC=false  # Set to true to enable VNC debugging
+    volumes:
+      # Mount local malmo directory
+      - ../../malmo:/opt/malmo:rw
+    networks:
+      - malmo_network
+    restart: unless-stopped
+    # Give Minecraft time to start
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9000"]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s  # 3 minutes for initial startup
+      retries: 5
+
+  # MCP Server (FastAPI + PIANO Architecture)
+  mcp_server:
+    build:
+      context: ..
+      dockerfile: deployment/Dockerfile.mcp_server
+    container_name: mcp_server
+    ports:
+      - "8000:8000"  # FastAPI server
+    environment:
+      # API Keys (from .env file or host environment)
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # Database connection
+      - DATABASE_URL=postgresql://malmo:malmo_password@postgres:5432/malmo_benchmarks
+      # Malmo connection
+      - MALMO_HOST=malmo
+      - MALMO_PORT=9000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - malmo_network
+    restart: unless-stopped
+
+  # PostgreSQL Database for Benchmarking Metrics
+  postgres:
+    image: postgres:15-alpine
+    container_name: malmo_postgres
+    environment:
+      - POSTGRES_USER=malmo
+      - POSTGRES_PASSWORD=malmo_password
+      - POSTGRES_DB=malmo_benchmarks
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - malmo_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U malmo -d malmo_benchmarks"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  malmo_network:
+    driver: bridge

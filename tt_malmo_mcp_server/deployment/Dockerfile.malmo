@@ -1,0 +1,129 @@
+# Malmo Server Dockerfile
+# Minecraft 1.11.2 with Malmo mod for AI agent benchmarking
+#
+# This runs Minecraft headlessly on Linux using Xvfb (virtual framebuffer)
+# and exposes MalmoEnv server on port 9000
+
+# Force x86_64 architecture - Minecraft/Java 8 requires this
+FROM --platform=linux/amd64 ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    # Java 8 for Minecraft
+    openjdk-8-jdk \
+    # Virtual display for headless Minecraft
+    xvfb \
+    x11vnc \
+    # Graphics libraries
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libgl1-mesa-glx \
+    libgl1-mesa-dri \
+    # Build tools
+    git \
+    wget \
+    unzip \
+    # Python for MalmoEnv
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Java environment
+ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Set display for headless operation
+ENV DISPLAY=:99
+
+WORKDIR /opt/malmo
+
+# Copy the local Malmo directory (mounted as volume in docker-compose)
+# For standalone build, uncomment the git clone below:
+# RUN git clone https://github.com/microsoft/malmo.git /opt/malmo
+
+# Install Python dependencies for MalmoEnv
+RUN pip3 install --no-cache-dir \
+    gymnasium \
+    lxml \
+    numpy \
+    pillow
+
+# Create startup script for Malmo
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+PORT=${MALMO_PORT:-9000}\n\
+\n\
+echo "============================================"\n\
+echo "  Starting Malmo Minecraft Server"\n\
+echo "============================================"\n\
+echo "  Port: $PORT"\n\
+echo "  Display: $DISPLAY"\n\
+echo ""\n\
+\n\
+# Start virtual display\n\
+echo "Starting Xvfb virtual display..."\n\
+Xvfb :99 -screen 0 1280x720x24 &\n\
+XVFB_PID=$!\n\
+sleep 2\n\
+\n\
+# Verify Xvfb is running\n\
+if ! kill -0 $XVFB_PID 2>/dev/null; then\n\
+    echo "ERROR: Xvfb failed to start"\n\
+    exit 1\n\
+fi\n\
+echo "  Xvfb running (PID: $XVFB_PID)"\n\
+\n\
+# Optional: Start VNC server for debugging\n\
+if [ "${ENABLE_VNC:-false}" = "true" ]; then\n\
+    echo "Starting VNC server on port 5900..."\n\
+    x11vnc -display :99 -nopw -forever -shared &\n\
+fi\n\
+\n\
+cd /opt/malmo/Minecraft\n\
+\n\
+# Create Malmo config for env mode\n\
+mkdir -p run/config\n\
+cat > run/config/malmomodCLIENT.cfg << EOF\n\
+# Configuration file\n\
+# Auto-generated for Docker\n\
+\n\
+malmoports {\n\
+  I:portOverride=$PORT\n\
+}\n\
+malmoscore {\n\
+  I:policy=0\n\
+}\n\
+envtype {\n\
+  B:env=true\n\
+}\n\
+EOF\n\
+\n\
+echo "Starting Minecraft with Malmo mod..."\n\
+echo "This may take 1-2 minutes on first run."\n\
+echo ""\n\
+\n\
+# Run Gradle to start Minecraft\n\
+./gradlew runClient --no-daemon 2>&1 | tee /var/log/minecraft.log\n\
+' > /opt/start_malmo.sh && chmod +x /opt/start_malmo.sh
+
+# Create a health check script
+RUN echo '#!/bin/bash\n\
+PORT=${MALMO_PORT:-9000}\n\
+nc -z localhost $PORT 2>/dev/null && echo "OK" || exit 1\n\
+' > /opt/healthcheck.sh && chmod +x /opt/healthcheck.sh
+
+# Expose Malmo ports
+# 9000-9010: MalmoEnv agent connections
+EXPOSE 9000-9010
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD /opt/healthcheck.sh
+
+# Default command
+CMD ["/opt/start_malmo.sh"]

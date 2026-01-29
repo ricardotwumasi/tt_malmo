@@ -1,0 +1,49 @@
+# Dockerfile for Malmo/Minecraft Server
+# Runs headless Minecraft for agent environments
+
+FROM ubuntu:20.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install dependencies for headless Minecraft
+RUN apt-get update && apt-get install -y \
+    python3.9 \
+    python3-pip \
+    openjdk-8-jdk \
+    xvfb \
+    x11vnc \
+    fluxbox \
+    libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libgl1-mesa-glx \
+    libglu1-mesa \
+    wget \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Java 8
+ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Install Python dependencies
+RUN pip3 install malmoenv gymnasium lxml numpy pillow
+
+# Set up virtual display
+ENV DISPLAY=:99
+
+# Create working directory
+WORKDIR /app
+
+# Copy Malmo files (will be mounted or copied during build)
+COPY malmo /app/malmo
+
+# Expose Malmo ports
+EXPOSE 9000 9001 9002 9003 9004
+
+# Start script
+COPY docker-entrypoint-malmo.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

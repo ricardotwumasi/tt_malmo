@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+logs/
+api_keys/
+*.pem
+*.key
+
+# Minecraft/Malmo build artifacts
+malmo/Minecraft/build/
+malmo/Minecraft/run/
+malmo/Minecraft/.gradle/
+*.jar
+!gradle-wrapper.jar
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Temporary files
+/private/
+*.tmp
