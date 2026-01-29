@@ -23,10 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Documentation**:
   - `QUICKSTART_APPLE_SILICON.md` - Complete Apple Silicon setup guide
   - `DOCKER_SETUP.md` - Docker configuration guide
+  - `LINUX_DEPLOYMENT.md` - Linux server deployment guide with systemd and nginx
   - `CHANGELOG.md` - This changelog
 - **Helper Scripts**:
   - `start_docker_malmo.sh` - Easy Docker management
   - `launch_malmo.sh` - Native Malmo launcher
+  - `deploy.sh` - Automated deployment for Docker and local setups
   - `monitor_agents.py` - Human oversight dashboard
   - `test_malmo_integration.py` - End-to-end integration test
   - `test_malmo_simple.py` - Simple connection test

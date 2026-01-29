@@ -138,6 +138,7 @@ See [DOCKER_SETUP.md](tt_malmo_mcp_server/DOCKER_SETUP.md) for detailed instruct
 |----------|-------------|
 | [QUICKSTART_APPLE_SILICON.md](tt_malmo_mcp_server/QUICKSTART_APPLE_SILICON.md) | Setup guide for M1/M2/M3 Macs |
 | [DOCKER_SETUP.md](tt_malmo_mcp_server/DOCKER_SETUP.md) | Docker deployment guide |
+| [LINUX_DEPLOYMENT.md](tt_malmo_mcp_server/LINUX_DEPLOYMENT.md) | Linux server deployment (Ubuntu/Debian) |
 | [MACOS_SETUP.md](tt_malmo_mcp_server/MACOS_SETUP.md) | macOS setup instructions |
 | [PROJECT_STATUS.md](PROJECT_STATUS.md) | Current development status |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
