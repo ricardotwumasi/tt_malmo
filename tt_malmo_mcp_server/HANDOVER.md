@@ -1,615 +1,450 @@
 # Malmo MCP Server - Developer Handover Document
 
-**Date:** December 2025
-**Project:** Multi-Agent Benchmarking System with PIANO Architecture
-**Repository:** https://github.kcl.ac.uk/k1812261/tt_malmo
+**Date:** January 2025
+**Project:** Multi-Agent AI Benchmarking System with PIANO Architecture
+**Repository:** https://github.com/ricardotwumasi/tt_malmo
 **Contact:** ricardo.twumasi@kcl.ac.uk
 
 ---
 
 ## Executive Summary
 
-This project implements a multi-agent benchmarking system using Microsoft Project Malmo (Minecraft) as the evaluation environment. The system uses the PIANO (Parallel Information Aggregation via Neural Orchestration) cognitive architecture and Model Context Protocol (MCP) to coordinate multiple AI agents. Currently deployed locally and tested with Gemini 2.5 Flash; ready for CREATE Cloud deployment and expanded testing.
+This project implements a multi-agent AI benchmarking system using Microsoft Project Malmo (Minecraft) as the evaluation environment. The system uses the PIANO (Parallel Information Aggregation via Neural Orchestration) cognitive architecture to coordinate multiple AI agents powered by various LLM providers (Gemini, OpenRouter, Cerebras, Cloudflare).
+
+**Current Status:** MVP 80% complete - ready for deployment and testing.
 
 ---
 
-## Current Status
+## Quick Start for New Developers
 
-### ✅ Completed
+### 1. Clone the Repository (with Malmo submodule)
 
-1. **Core Infrastructure**
-   - MCP server (FastAPI) with agent management API
-   - PIANO cognitive architecture (5 modules)
-   - LLM adapters (Gemini 2.5 Flash, Claude Opus 4.5 ready)
-   - Malmo environment integration
-   - Docker containerization
-   - Comprehensive documentation
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/ricardotwumasi/tt_malmo.git
+cd tt_malmo
 
-2. **Testing & Validation**
-   - Local testing successful with Gemini 2.5 Flash
-   - Agent connection verified
-   - PIANO modules operational
-   - Decision-making loop functional
+# If already cloned without submodules:
+git submodule update --init --recursive
+```
 
-3. **Repository & Documentation**
-   - Code pushed to KCL GitHub
-   - README.md, DEPLOY.md, MACOS_SETUP.md complete
-   - Docker configurations ready
+### 2. Set Up Development Environment
 
-### 🚧 Pending Tasks
+```bash
+cd tt_malmo_mcp_server
 
-1. **Deploy to CREATE Cloud infrastructure**
-2. **Test with 5-10 agents and validate MVP**
-3. **Implement benchmarking system (metrics store, role analysis)**
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Configure API keys
+cp .env.example .env
+# Edit .env and add at least one API key (GOOGLE_API_KEY recommended)
+```
+
+### 3. Run the MCP Server
+
+```bash
+export $(cat .env | grep -v '^#' | xargs)
+python -m uvicorn mcp_server.server:app --reload --host 0.0.0.0 --port 8000
+```
+
+### 4. Test the API
+
+```bash
+# Health check
+curl http://localhost:8000/health
+
+# Create an agent
+curl -X POST http://localhost:8000/agents \
+  -H "Content-Type: application/json" \
+  -d '{"name":"TestAgent","llm_type":"gemini","role":0,"traits":["curious"]}'
+
+# List agents
+curl http://localhost:8000/agents
+```
+
+---
+
+## Current Implementation Status
+
+### Completed Components
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| **MCP Server** | Complete | `mcp_server/` |
+| **PIANO Architecture** | Complete (5 modules) | `piano_architecture/` |
+| **LLM Adapters** | Complete (5 providers) | `llm_adapters/` |
+| **Malmo Integration** | Complete | `malmo_integration/` |
+| **Benchmarking Framework** | Complete | `benchmarking/` |
+| **Test Suite** | Complete (95+ tests) | `tests/` |
+| **Docker Configuration** | Complete | `deployment/` |
+| **Documentation** | Complete | Various .md files |
+
+### LLM Providers Supported
+
+| Provider | Model | Free Tier | Status |
+|----------|-------|-----------|--------|
+| **Google Gemini** | gemini-2.5-flash-lite | Yes (15 RPM) | Tested |
+| **OpenRouter** | DeepSeek, GLM, Llama | Yes (varies) | Implemented |
+| **Cerebras** | Llama 3.1/3.3 | Yes (1M tokens/day) | Implemented |
+| **Cloudflare** | Llama, DeepSeek | Yes (10K neurons/day) | Implemented |
+| **Anthropic Claude** | Claude Opus 4.5 | No (paid) | Implemented |
+
+### PIANO Cognitive Modules
+
+1. **Perception** - Processes sensory input from Minecraft
+2. **Social Awareness** - Tracks relationships with other agents
+3. **Goal Generation** - Creates and prioritizes goals
+4. **Action Awareness** - Monitors action outcomes (prevents hallucinations)
+5. **Memory Consolidation** - Manages working/long-term memory
 
 ---
 
 ## Project Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│         MCP Server (FastAPI)                │
-│  - Agent Management API                     │
-│  - WebSocket Support                        │
-│  - Metrics Collection                       │
-└──────────────┬──────────────────────────────┘
-               │
-    ┌──────────┴──────────┐
-    │                     │
-┌───▼─────────────┐ ┌────▼──────────────┐
-│ PIANO Agent 1   │ │ PIANO Agent N     │
-│ - Gemini/Claude │ │ - Gemini/Claude   │
-│ - 5 Modules     │ │ - 5 Modules       │
-└───┬─────────────┘ └────┬──────────────┘
-    │                     │
-    └──────────┬──────────┘
-               │
-    ┌──────────▼──────────┐
-    │ Environment Manager │
-    └──────────┬──────────┘
-               │
-    ┌──────────▼──────────┐
-    │ Malmo/Minecraft     │
-    │ (Headless Servers)  │
-    └─────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    MCP Server (FastAPI)                      │
+│  - REST API: /agents, /agents/{id}/start, /health           │
+│  - WebSocket: Real-time agent updates                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │              PIANO Architecture                      │   │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐   │   │
+│  │  │Perception│ │ Social  │ │  Goal   │ │ Action  │   │   │
+│  │  │         │ │Awareness│ │  Gen    │ │Awareness│   │   │
+│  │  └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘   │   │
+│  │       │           │           │           │         │   │
+│  │       └───────────┴─────┬─────┴───────────┘         │   │
+│  │                         ▼                           │   │
+│  │              ┌─────────────────────┐                │   │
+│  │              │ Cognitive Controller │◄── LLM        │   │
+│  │              │    (Bottleneck)      │   Adapter     │   │
+│  │              └─────────────────────┘                │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                              │
+└──────────────────────────┬──────────────────────────────────┘
+                           │
+                           ▼
+              ┌─────────────────────────┐
+              │   Malmo / Minecraft     │
+              │   (via MalmoEnv)        │
+              └─────────────────────────┘
 ```
-
-### Key Components
-
-**1. MCP Server** (`mcp_server/`)
-- **server.py**: FastAPI application, endpoints for agent CRUD
-- **agent_manager.py**: Agent lifecycle management
-- **protocol/**: Message definitions
-
-**2. PIANO Architecture** (`piano_architecture/`)
-- **cognitive_controller.py**: Decision bottleneck, module aggregation
-- **agent_state.py**: Thread-safe state management
-- **modules/**: 5 cognitive modules (Perception, Action, Social, Goal, Memory)
-
-**3. LLM Adapters** (`llm_adapters/`)
-- **base_adapter.py**: Abstract interface
-- **gemini_adapter.py**: Google Gemini integration (tested ✅)
-- **claude_adapter.py**: Anthropic Claude (ready, not tested)
-
-**4. Malmo Integration** (`malmo_integration/`)
-- **environment_manager.py**: Bridges agents to Minecraft
-- **mission_builder.py**: Mission XML generation
-
-**5. Configuration** (`config.py`)
-- Centralized env variables
-- No hardcoded paths
-- Deployment-agnostic
 
 ---
 
-## Pending Tasks - Detailed Instructions
+## Repository Structure
 
-### Task 1: Deploy to CREATE Cloud Infrastructure
-
-**Priority:** High
-**Estimated Time:** 4-6 hours
-**Dependencies:** CREATE Cloud account, VM access
-
-#### Steps:
-
-1. **Create VM on CREATE Cloud**
-   ```
-   - OS: Ubuntu 20.04 LTS
-   - Flavor: m1.large (8GB RAM, 4 vCPUs)
-   - Storage: 50GB
-   - Security Groups: Allow ports 22, 8000, 9000-9010
-   - Assign Floating IP
-   ```
-
-2. **SSH into VM and Install Docker**
-   ```bash
-   ssh ubuntu@<FLOATING_IP>
-   curl -fsSL https://get.docker.com -o get-docker.sh
-   sudo sh get-docker.sh
-   sudo usermod -aG docker $USER
-
-   # Install Docker Compose
-   sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-   sudo chmod +x /usr/local/bin/docker-compose
-   ```
-
-3. **Clone Repository**
-   ```bash
-   git clone https://github.kcl.ac.uk/k1812261/tt_malmo.git
-   cd tt_malmo/tt_malmo_mcp_server
-   ```
-
-4. **Configure Environment**
-   ```bash
-   cp .env.example .env
-   nano .env
-   # Add: GOOGLE_API_KEY=<your_key>
-   # Add: ANTHROPIC_API_KEY=<your_key> (if using Claude)
-   ```
-
-5. **Deploy with Docker Compose**
-   ```bash
-   docker-compose build
-   docker-compose up -d
-   ```
-
-6. **Verify Deployment**
-   ```bash
-   # Check services
-   docker-compose ps
-
-   # Check logs
-   docker-compose logs -f mcp-server
-
-   # Test health endpoint
-   curl http://localhost:8000/health
-   ```
-
-7. **Test External Access**
-   ```bash
-   # From local machine:
-   curl http://<FLOATING_IP>:8000/health
-   ```
-
-**Documentation:** See `DEPLOY.md` for complete guide
-
-**Troubleshooting:**
-- Port conflicts: Check `sudo lsof -i :<port>`
-- Memory issues: Monitor with `docker stats`
-- Connection issues: Verify security groups in CREATE dashboard
+```
+tt_malmo/
+├── malmo/                          # Microsoft Malmo (git submodule)
+│   ├── MalmoEnv/                   # Python environment interface
+│   ├── Minecraft/                  # Modified Minecraft client
+│   └── sample_missions/            # Example mission XMLs
+│
+├── tt_malmo_mcp_server/            # Main application
+│   ├── mcp_server/                 # FastAPI server
+│   │   ├── server.py               # API endpoints
+│   │   ├── agent_manager.py        # Agent lifecycle
+│   │   └── protocol/               # Message types
+│   │
+│   ├── piano_architecture/         # PIANO cognitive modules
+│   │   ├── cognitive_controller.py # Decision bottleneck
+│   │   ├── agent_state.py          # Shared state
+│   │   └── modules/                # 5 cognitive modules
+│   │
+│   ├── llm_adapters/               # LLM provider integrations
+│   │   ├── factory.py              # Adapter factory
+│   │   ├── gemini_adapter.py       # Google Gemini
+│   │   ├── openrouter_adapter.py   # OpenRouter (multi-model)
+│   │   ├── cerebras_adapter.py     # Cerebras
+│   │   └── cloudflare_adapter.py   # Cloudflare Workers AI
+│   │
+│   ├── malmo_integration/          # Malmo/Minecraft bridge
+│   │   ├── environment_manager.py  # Environment connection
+│   │   └── mission_builder.py      # Mission XML generation
+│   │
+│   ├── benchmarking/               # Metrics and evaluation
+│   │   ├── metrics_store.py        # PostgreSQL/in-memory storage
+│   │   └── evaluator.py            # Benchmark scoring
+│   │
+│   ├── deployment/                 # Docker configurations
+│   │   ├── docker-compose.yml      # Full stack
+│   │   ├── Dockerfile.mcp_server   # MCP server container
+│   │   └── Dockerfile.malmo        # Malmo container
+│   │
+│   ├── tests/                      # Test suite (95+ tests)
+│   │   ├── test_piano_modules.py
+│   │   ├── test_mcp_server.py
+│   │   ├── test_gemini_adapter.py
+│   │   └── ...
+│   │
+│   ├── config.py                   # Configuration management
+│   ├── requirements.txt            # Python dependencies
+│   └── .env.example                # Environment template
+│
+├── README.md                       # Project overview
+├── CHANGELOG.md                    # Version history
+├── PROJECT_STATUS.md               # Development status
+└── .gitmodules                     # Submodule configuration
+```
 
 ---
 
-### Task 2: Test with 5-10 Agents and Validate MVP
+## Pending Development Tasks
 
-**Priority:** High
-**Estimated Time:** 8-12 hours
-**Dependencies:** Task 1 completed
+### Priority 1: Deploy and Test on Linux Server
 
-#### Steps:
+**Goal:** Get the full benchmark running on CREATE Cloud or another Linux server.
 
-1. **Create Test Agents**
-   ```bash
-   # Script to create 10 agents
-   for i in {0..9}; do
-     curl -X POST http://localhost:8000/agents \
-       -H "Content-Type: application/json" \
-       -d "{
-         \"name\": \"Agent_Gemini_$i\",
-         \"llm_provider\": \"gemini\",
-         \"model\": \"gemini-2.5-flash\",
-         \"role\": $i,
-         \"traits\": [\"curious\", \"strategic\", \"collaborative\"]
-       }"
-     echo ""
-   done
-   ```
+**Steps:**
+1. Request CREATE Cloud VM (Ubuntu 22.04, 8GB RAM)
+2. Clone repository with submodules
+3. Run `./deploy.sh` for Docker deployment
+4. Test with 5-10 agents
 
-2. **Verify Agent Creation**
-   ```bash
-   curl http://localhost:8000/agents | python3 -m json.tool
-   ```
+**Documentation:** See `LINUX_DEPLOYMENT.md`
 
-3. **Start Agents in Mission**
-   ```bash
-   # For each agent, start decision loop
-   AGENT_IDS=$(curl -s http://localhost:8000/agents | jq -r '.[].agent_id')
-   for id in $AGENT_IDS; do
-     curl -X POST http://localhost:8000/agents/$id/start
-   done
-   ```
+### Priority 2: Complete Minecraft Integration Testing
 
-4. **Monitor Agent Performance**
-   ```bash
-   # Watch logs
-   docker-compose logs -f mcp-server
+**Goal:** Verify agents can control Minecraft via MalmoEnv.
 
-   # Check agent states
-   for id in $AGENT_IDS; do
-     curl http://localhost:8000/agents/$id/state
-   done
+**Current Issue:** macOS has LWJGL threading compatibility issues. Docker on Linux works.
 
-   # Monitor metrics
-   curl http://localhost:8000/metrics
-   ```
+**Steps:**
+1. Deploy on Linux (Docker)
+2. Start Minecraft with Malmo mod
+3. Connect agents via environment manager
+4. Verify action execution
 
-5. **Run Multi-Agent Mission**
-   - Use `mobchase_two_agents.xml` or custom multi-agent mission
-   - Launch agents using `launch_agent_in_minecraft.py`
-   - Monitor for 1000+ steps (or mission completion)
+### Priority 3: Implement Evaluation Metrics Collection
 
-6. **Validation Criteria**
-   - ✅ All agents connect successfully
-   - ✅ PIANO modules generate decisions
-   - ✅ Agents execute actions in Minecraft
-   - ✅ No crashes or timeouts for 30+ minutes
-   - ✅ Metrics collection works
-   - ✅ Multi-agent coordination observable
+**Goal:** Collect and store benchmark metrics for analysis.
 
-**Key Files:**
-- `launch_agent_in_minecraft.py`: Agent launcher
-- `missions/`: Available mission XMLs
-- `logs/`: Check for errors
+**Components to integrate:**
+- `benchmarking/metrics_store.py` - Already implemented
+- `benchmarking/evaluator.py` - Already implemented
+- Need: Connect to PIANO decision loop
+
+**Metrics domains:**
+- Alignment: Goal adherence, ethical behavior
+- Autonomy: Independent decision-making
+- Performance: Task completion, resource gathering
+- Social: Multi-agent cooperation
+
+### Priority 4: Build Web Dashboard
+
+**Goal:** Real-time visualization of agent performance.
+
+**Suggested approach:**
+- Streamlit dashboard for quick development
+- Connect to metrics store
+- Display agent states, decisions, scores
 
 ---
 
-### Task 3: Implement Benchmarking System
+## Configuration Reference
 
-**Priority:** Medium
-**Estimated Time:** 16-24 hours
-**Dependencies:** Task 2 completed
+### Environment Variables (.env)
 
-#### Components to Implement:
+```bash
+# LLM API Keys (at least one required)
+GOOGLE_API_KEY=your_gemini_key           # Recommended - free tier
+OPENROUTER_API_KEY=your_openrouter_key   # Access to many models
+CEREBRAS_API_KEY=your_cerebras_key       # Fast inference
+CLOUDFLARE_API_TOKEN=your_cf_token       # Reliable infrastructure
+ANTHROPIC_API_KEY=your_anthropic_key     # Premium option
 
-**A. Metrics Store**
+# Database (optional - uses in-memory if not set)
+DATABASE_URL=postgresql://user:pass@localhost:5432/malmo_benchmarks
 
-Create `benchmarking/metrics_store.py`:
-
-```python
-"""
-Persistent storage for agent metrics.
-Store in PostgreSQL or SQLite.
-"""
-
-class MetricsStore:
-    def __init__(self, db_url):
-        # Connect to database
-        pass
-
-    def record_decision(self, agent_id, timestamp, decision, reward):
-        """Record each agent decision with outcome"""
-        pass
-
-    def record_episode(self, agent_id, episode_data):
-        """Record complete episode metrics"""
-        pass
-
-    def get_agent_summary(self, agent_id):
-        """Get aggregate metrics for agent"""
-        return {
-            'total_decisions': int,
-            'avg_reward': float,
-            'alignment_score': float,
-            'autonomy_score': float,
-            'episode_count': int
-        }
+# Server Configuration
+MCP_SERVER_HOST=0.0.0.0
+MCP_SERVER_PORT=8000
+MALMO_HOST=localhost
+MALMO_PORT=9000
 ```
 
-**B. Role Analysis**
-
-Create `benchmarking/role_analyzer.py`:
-
-```python
-"""
-Analyze agent performance by role.
-Roles: miner, scout, blacksmith, etc.
-"""
-
-class RoleAnalyzer:
-    def analyze_role_performance(self, agent_id, role):
-        """
-        Measure role-specific metrics:
-        - Miner: resources gathered
-        - Scout: area explored
-        - Builder: structures created
-        """
-        pass
-
-    def compare_roles(self):
-        """Compare performance across roles"""
-        pass
-```
-
-**C. Alignment Scoring**
-
-Create `benchmarking/alignment_scorer.py`:
-
-```python
-"""
-Score agent alignment based on MACHIAVELLI framework.
-"""
-
-class AlignmentScorer:
-    def score_decision(self, decision, context):
-        """
-        Score individual decision:
-        - power_seeking: bool
-        - harm_caused: float
-        - deception: bool
-        - ethical_violation: bool
-        """
-        pass
-
-    def aggregate_alignment_score(self, agent_id):
-        """Calculate overall alignment score"""
-        pass
-```
-
-**D. Dashboard/Visualization**
-
-Create `benchmarking/dashboard.py`:
-
-```python
-"""
-Streamlit or Plotly dashboard for real-time metrics.
-"""
-
-import streamlit as st
-
-def render_dashboard():
-    st.title("Malmo Agent Benchmarking")
-
-    # Agent comparison
-    st.header("Agent Performance")
-    # Plot: reward over time, decisions per minute, etc.
-
-    # Alignment metrics
-    st.header("Alignment Scores")
-    # Heatmap of alignment violations
-
-    # Role analysis
-    st.header("Role Performance")
-    # Bar chart comparing roles
-```
-
-#### Database Schema
-
-```sql
-CREATE TABLE agents (
-    agent_id UUID PRIMARY KEY,
-    name VARCHAR(255),
-    llm_provider VARCHAR(50),
-    role INT,
-    created_at TIMESTAMP
-);
-
-CREATE TABLE decisions (
-    id SERIAL PRIMARY KEY,
-    agent_id UUID REFERENCES agents(agent_id),
-    timestamp TIMESTAMP,
-    action VARCHAR(255),
-    reasoning TEXT,
-    reward FLOAT,
-    alignment_score FLOAT
-);
-
-CREATE TABLE episodes (
-    id SERIAL PRIMARY KEY,
-    agent_id UUID REFERENCES agents(agent_id),
-    mission_name VARCHAR(255),
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    total_reward FLOAT,
-    steps INT,
-    completed BOOLEAN
-);
-
-CREATE TABLE alignment_events (
-    id SERIAL PRIMARY KEY,
-    agent_id UUID REFERENCES agents(agent_id),
-    decision_id INT REFERENCES decisions(id),
-    event_type VARCHAR(50), -- 'power_seeking', 'harm', 'deception'
-    severity FLOAT,
-    description TEXT
-);
-```
-
-#### Integration Points
-
-1. **Modify `cognitive_controller.py`:**
-   ```python
-   # Add after decision is made:
-   from benchmarking.metrics_store import MetricsStore
-
-   metrics = MetricsStore(config.DATABASE_URL)
-   metrics.record_decision(agent_id, timestamp, decision, reward)
-   ```
-
-2. **Add endpoint to `server.py`:**
-   ```python
-   @app.get("/benchmarks/{agent_id}")
-   async def get_benchmarks(agent_id: str):
-       analyzer = RoleAnalyzer()
-       scorer = AlignmentScorer()
-
-       return {
-           "performance": analyzer.analyze_role_performance(agent_id),
-           "alignment": scorer.aggregate_alignment_score(agent_id),
-           "metrics": metrics_store.get_agent_summary(agent_id)
-       }
-   ```
-
----
-
-## Development Environment Setup
-
-### Local Development (macOS)
-
-1. **Prerequisites**
-   - Python 3.9+
-   - Java 8 (for Malmo)
-   - Docker Desktop
-
-2. **Install MalmoEnv**
-   ```bash
-   cd malmo/Minecraft
-   ./setup_malmoenv.sh
-   ```
-
-3. **Create Virtual Environment**
-   ```bash
-   cd tt_malmo_mcp_server
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-
-4. **Configure API Keys**
-   ```bash
-   cp .env.example .env
-   nano .env  # Add your API keys
-   ```
-
-5. **Test Locally**
-   ```bash
-   # Terminal 1: Start Malmo
-   cd malmo/Minecraft
-   ./launchClient.sh -port 9000 -env
-
-   # Terminal 2: Start MCP Server
-   cd tt_malmo_mcp_server
-   source venv/bin/activate
-   python -m uvicorn mcp_server.server:app --reload
-
-   # Terminal 3: Test
-   curl http://localhost:8000/health
-   python test_gemini.py
-   ```
-
----
-
-## Key Configuration Files
+### Key Configuration Files
 
 | File | Purpose |
 |------|---------|
-| `.env` | API keys, deployment settings (NOT in git) |
+| `.env` | API keys, secrets (not in git) |
 | `.env.example` | Template for .env |
 | `config.py` | Centralized configuration |
-| `docker-compose.yml` | Multi-container orchestration |
-| `Dockerfile` | MCP server container |
-| `Dockerfile.malmo` | Malmo server container |
 | `requirements.txt` | Python dependencies |
+| `pytest.ini` | Test configuration |
+
+---
+
+## API Reference
+
+### Agent Management
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Server health check |
+| `/agents` | GET | List all agents |
+| `/agents` | POST | Create new agent |
+| `/agents/{id}` | GET | Get agent details |
+| `/agents/{id}` | DELETE | Delete agent |
+| `/agents/{id}/start` | POST | Start agent PIANO loop |
+| `/agents/{id}/stop` | POST | Stop agent |
+
+### Create Agent Request
+
+```json
+{
+  "name": "Explorer",
+  "llm_type": "gemini",
+  "role": 0,
+  "traits": ["curious", "cautious"]
+}
+```
+
+### Agent Response
+
+```json
+{
+  "agent_id": "uuid-here",
+  "name": "Explorer",
+  "llm_type": "gemini",
+  "status": "running",
+  "created_at": "2025-01-29T12:00:00Z"
+}
+```
 
 ---
 
 ## Testing
 
-### Unit Tests (To Be Implemented)
+### Run Full Test Suite
 
 ```bash
-pytest tests/
+cd tt_malmo_mcp_server
+source venv/bin/activate
+pytest tests/ -v
 ```
 
-### Integration Tests
+### Run with Coverage
 
 ```bash
-# Test agent creation
-python tests/test_agent_creation.py
-
-# Test PIANO modules
-python tests/test_piano_modules.py
-
-# Test Malmo connection
-python tests/test_malmo_integration.py
+pytest tests/ -v --cov=. --cov-report=term-missing
 ```
+
+### Test Categories
+
+- `test_piano_modules.py` - PIANO architecture tests
+- `test_mcp_server.py` - API endpoint tests
+- `test_gemini_adapter.py` - Gemini LLM tests
+- `test_openrouter_adapter.py` - OpenRouter tests
+- `test_mission_builder.py` - Mission XML generation
+- `test_environment_manager.py` - Malmo connection tests
 
 ---
 
-## Known Issues & Limitations
+## Known Issues and Workarounds
 
-1. **macOS Display Bug**
-   - Minecraft crashes on macOS with window threading error
-   - **Workaround:** Deploy on Linux (CREATE Cloud)
+### 1. macOS Minecraft Compatibility
 
-2. **Gemini API Rate Limits**
-   - Free tier: 15 requests/minute
-   - **Solution:** Add rate limiting in `gemini_adapter.py`
+**Issue:** LWJGL threading crash on macOS
+**Workaround:** Use Docker on Linux for Minecraft
 
-3. **Mission XML Complexity**
-   - Custom missions require careful XML structure
-   - **Solution:** Use `mission_builder.py` or pre-built missions
+### 2. Malmo Asset Download
 
-4. **Memory Leaks (Potential)**
-   - Long-running agents may accumulate memory
-   - **Monitoring:** Use `docker stats` and log rotation
+**Issue:** Minecraft 1.11.2 asset servers sometimes fail
+**Workaround:** Non-critical (audio/language files), can continue
+
+### 3. Rate Limiting
+
+**Issue:** Free LLM tiers have rate limits
+**Workaround:** Use multiple providers, implement retry logic
+
+---
+
+## Deployment Options
+
+### Option 1: Docker (Recommended)
+
+```bash
+cd tt_malmo_mcp_server
+./deploy.sh
+```
+
+### Option 2: Local Development
+
+```bash
+cd tt_malmo_mcp_server
+./deploy.sh --local
+```
+
+### Option 3: Manual
+
+```bash
+cd tt_malmo_mcp_server
+source venv/bin/activate
+export $(cat .env | grep -v '^#' | xargs)
+python -m uvicorn mcp_server.server:app --host 0.0.0.0 --port 8000
+```
 
 ---
 
 ## Resources
 
-### Documentation
-- **README.md**: Project overview
-- **DEPLOY.md**: Complete deployment guide
-- **MACOS_SETUP.md**: Local development setup
+### Documentation in Repository
 
-### External Links
-- [Malmo Documentation](https://github.com/microsoft/malmo)
-- [CREATE Cloud Docs](https://docs.er.kcl.ac.uk/CREATE/)
-- [FastAPI Docs](https://fastapi.tiangolo.com/)
-- [Gemini API](https://ai.google.dev/docs)
+- `README.md` - Project overview and quick start
+- `LINUX_DEPLOYMENT.md` - Linux server deployment
+- `DOCKER_SETUP.md` - Docker configuration guide
+- `QUICKSTART_APPLE_SILICON.md` - macOS M1/M2/M3 setup
+- `MACOS_SETUP.md` - General macOS setup
+- `CHANGELOG.md` - Version history
+- `PROJECT_STATUS.md` - Development status
+
+### External Resources
+
+- [Microsoft Malmo](https://github.com/microsoft/malmo)
+- [MalmoEnv Documentation](https://github.com/microsoft/malmo/tree/master/MalmoEnv)
+- [FastAPI Documentation](https://fastapi.tiangolo.com/)
+- [Google Gemini API](https://ai.google.dev/)
+- [OpenRouter API](https://openrouter.ai/docs)
 
 ### Research Papers
-- PIANO Architecture: `project_sid.pdf`
+
+- PIANO Architecture: Altera's Project Sid
 - MACHIAVELLI Benchmark: https://arxiv.org/abs/2304.03279
-- AgentBench: https://github.com/THUDM/AgentBench
 - World Models: https://arxiv.org/abs/1803.10122
 
 ---
 
-## Contact & Support
+## Contact
 
-**Primary Contact:** ricardo.twumasi@kcl.ac.uk
+**Primary:** ricardo.twumasi@kcl.ac.uk
+**GitHub Issues:** https://github.com/ricardotwumasi/tt_malmo/issues
 **CREATE Support:** support@er.kcl.ac.uk
-**Repository Issues:** https://github.kcl.ac.uk/k1812261/tt_malmo/issues
 
 ---
 
-## Quick Reference Commands
+## Handover Checklist
 
-```bash
-# Deployment
-docker-compose up -d                    # Start all services
-docker-compose down                     # Stop all services
-docker-compose logs -f mcp-server       # View logs
-docker-compose ps                       # Check status
+For the receiving developer:
 
-# Agent Management
-curl http://localhost:8000/agents       # List agents
-curl -X POST http://localhost:8000/agents -d '{"name":"test",...}'  # Create
-curl http://localhost:8000/agents/{id}/start  # Start agent
-
-# Debugging
-docker exec -it malmo-mcp-server bash   # Shell into container
-docker-compose restart mcp-server       # Restart service
-git log --oneline -10                   # Recent commits
-```
+- [ ] Successfully clone repository with submodules
+- [ ] Set up local development environment
+- [ ] Run test suite (all tests pass)
+- [ ] Start MCP server locally
+- [ ] Create and list agents via API
+- [ ] Understand PIANO architecture
+- [ ] Review pending tasks above
+- [ ] Access to API keys (Gemini recommended)
 
 ---
 
-## Success Criteria for Handover
-
-- [ ] Successfully deploy to CREATE Cloud VM
-- [ ] Run 5+ agents concurrently for 1+ hour
-- [ ] Implement basic metrics storage
-- [ ] Generate alignment scores for test agents
-- [ ] Create performance comparison dashboard
-- [ ] Document any new issues in GitHub
-- [ ] Update README with findings
-
----
-
-**Last Updated:** 2025-12-04
-**Version:** 1.0
-**Next Review:** After Task 2 completion
-
-Good luck! The foundation is solid—time to scale and measure. 🚀
+**Last Updated:** 2025-01-29
+**Version:** 2.0
