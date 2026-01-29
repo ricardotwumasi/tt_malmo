@@ -16,21 +16,28 @@ RUN apt-get update && apt-get install -y \
     # Virtual display for headless Minecraft
     xvfb \
     x11vnc \
-    # Graphics libraries
+    # Graphics libraries with software rendering
     libxrender1 \
     libxtst6 \
     libxi6 \
     libgl1-mesa-glx \
     libgl1-mesa-dri \
+    libosmesa6 \
+    mesa-utils \
     # Build tools
     git \
     wget \
     unzip \
+    netcat-openbsd \
     # Python for MalmoEnv
     python3 \
     python3-pip \
     python3-venv \
     && rm -rf /var/lib/apt/lists/*
+
+# Set environment for software OpenGL rendering
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV MESA_GL_VERSION_OVERRIDE=3.3
 
 # Set Java environment
 ENV JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
@@ -65,11 +72,14 @@ echo "  Port: $PORT"\n\
 echo "  Display: $DISPLAY"\n\
 echo ""\n\
 \n\
+# Clean up any stale lock files\n\
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99 2>/dev/null || true\n\
+\n\
 # Start virtual display\n\
 echo "Starting Xvfb virtual display..."\n\
 Xvfb :99 -screen 0 1280x720x24 &\n\
 XVFB_PID=$!\n\
-sleep 2\n\
+sleep 3\n\
 \n\
 # Verify Xvfb is running\n\
 if ! kill -0 $XVFB_PID 2>/dev/null; then\n\
