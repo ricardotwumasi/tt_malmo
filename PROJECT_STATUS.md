@@ -1,7 +1,28 @@
 # Project Status: Malmo MCP Server MVP
 
-**Date**: 2025-11-26
-**Status**: MVP Core Implementation Complete ✅
+**Last Updated**: 2025-01-29
+**Status**: MVP Implementation Complete, Docker Setup In Progress
+
+## Recent Updates (January 2025)
+
+### v0.2.0 - Multi-LLM Support & Docker
+- ✅ Added multi-provider LLM support (OpenRouter, Cerebras, Cloudflare)
+- ✅ Updated Gemini to use gemini-2.5-flash-lite (free tier)
+- ✅ Implemented LLM adapter factory pattern
+- ✅ Added comprehensive benchmarking framework
+- ✅ Created 95+ unit and integration tests
+- ✅ Added Docker configuration for Linux deployment
+- ✅ Created Apple Silicon quick-start guide
+- 🔄 Docker Malmo container testing in progress
+
+### Current Focus
+- Testing Docker-based Minecraft/Malmo on Linux
+- Resolving software OpenGL rendering for headless operation
+
+---
+
+**Original Date**: 2025-11-26
+**Original Status**: MVP Core Implementation Complete ✅
 
 ## Overview
 
