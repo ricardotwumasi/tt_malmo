@@ -231,7 +231,7 @@ class MalmoEnvironmentManager:
         """
         action_lower = action.lower()
 
-        # Map actions to Malmo commands
+        # Movement commands
         if 'forward' in action_lower or 'explore' in action_lower:
             return 'move 1'
         elif 'back' in action_lower or 'retreat' in action_lower:
@@ -242,13 +242,71 @@ class MalmoEnvironmentManager:
             return 'turn 1'
         elif 'jump' in action_lower:
             return 'jump 1'
+        elif 'crouch' in action_lower or 'sneak' in action_lower:
+            return 'crouch 1'
+
+        # Building actions
+        elif 'place' in action_lower or 'build' in action_lower:
+            return 'use 1'
+        elif 'mine' in action_lower or 'break' in action_lower or 'dig' in action_lower:
+            return 'attack 1'
+
+        # Hotbar/inventory slot selection
+        elif 'select' in action_lower or 'slot' in action_lower or 'hotbar' in action_lower:
+            # Extract slot number: "select_slot_3" or "hotbar 3" → "hotbar.3 1"
+            slot = ''.join(filter(str.isdigit, action_lower)) or '1'
+            slot = min(int(slot), 9)  # Clamp to valid hotbar range 1-9
+            return f'hotbar.{slot} 1'
+
+        # Crafting commands
+        elif 'craft' in action_lower:
+            # Extract item name if present: "craft_planks" → "craft planks"
+            parts = action_lower.replace('_', ' ').split()
+            if len(parts) > 1:
+                item = parts[1]
+                return f'craft {item}'
+            return 'craft planks'  # Default craft
+
+        # Combat actions
         elif 'attack' in action_lower:
             return 'attack 1'
+
+        # Interaction
         elif 'use' in action_lower or 'interact' in action_lower:
             return 'use 1'
+
+        # Look commands (pitch = up/down, yaw = left/right)
+        elif 'look_up' in action_lower:
+            return 'pitch -0.5'
+        elif 'look_down' in action_lower:
+            return 'pitch 0.5'
+
+        # Stop commands
+        elif 'stop' in action_lower or 'wait' in action_lower:
+            return 'move 0'
+
         else:
             # Default: move forward
             return 'move 1'
+
+    def execute_action_sequence(self, actions: list) -> list:
+        """
+        Execute a sequence of actions in order.
+
+        Args:
+            actions: List of high-level action strings
+
+        Returns:
+            List of (observation, reward, done) tuples for each action
+        """
+        results = []
+        for action in actions:
+            malmo_cmd = self._action_to_malmo_command(action)
+            obs, reward, done = self.step(malmo_cmd)
+            results.append((obs, reward, done))
+            if done:
+                break
+        return results
 
     def stop(self):
         """Stop the agent control loop."""

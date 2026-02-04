@@ -23,6 +23,8 @@ from .protocol.messages import (
     ObservationMessage,
     ActionMessage
 )
+from malmo_integration.environment_manager import MalmoEnvironmentManager
+from malmo_integration.mission_builder import MissionBuilder
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -42,6 +44,13 @@ app.add_middleware(
 
 # Global agent manager
 agent_manager = AgentManager()
+
+# Environment managers for connected agents (agent_id -> MalmoEnvironmentManager)
+env_managers: Dict[str, MalmoEnvironmentManager] = {}
+
+# Mission state
+mission_active = False
+mission_xml = None
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -245,6 +254,269 @@ async def stop_agent(agent_id: str):
         "agent_id": agent_id,
         "status": "stopped",
         "message": f"Agent {agent_id} PIANO architecture stopped"
+    }
+
+
+@app.post("/agents/{agent_id}/goal")
+async def set_agent_goal(agent_id: str, goal: dict):
+    """
+    Set a goal for an agent.
+
+    Args:
+        agent_id: Agent ID
+        goal: Goal dictionary with 'description' and optional 'priority'
+
+    Returns:
+        Confirmation with goal details
+    """
+    if agent_id not in agent_manager.agent_states:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent_state = agent_manager.agent_states[agent_id]
+
+    # Create goal object
+    new_goal = {
+        'description': goal.get('description', 'No description'),
+        'priority': goal.get('priority', 10),  # High priority for user-set goals
+        'source': 'user',
+        'timestamp': datetime.now().isoformat()
+    }
+
+    # Add to agent's current goals (at the front for high priority)
+    with agent_state.lock:
+        agent_state.current_goals.insert(0, new_goal)
+        # Keep only top 5 goals
+        agent_state.current_goals = agent_state.current_goals[:5]
+
+    agent_name = agent_manager.agents[agent_id]['name']
+    print(f"[{agent_name}] New goal set: {new_goal['description']}")
+
+    return {
+        "agent_id": agent_id,
+        "goal": new_goal,
+        "message": f"Goal set for agent {agent_name}"
+    }
+
+
+@app.post("/agents/broadcast-goal")
+async def broadcast_goal(goal: dict):
+    """
+    Set the same goal for all agents.
+
+    Args:
+        goal: Goal dictionary with 'description' and optional 'priority'
+
+    Returns:
+        Confirmation with affected agents
+    """
+    affected_agents = []
+
+    for agent_id, agent_state in agent_manager.agent_states.items():
+        new_goal = {
+            'description': goal.get('description', 'No description'),
+            'priority': goal.get('priority', 10),
+            'source': 'user_broadcast',
+            'timestamp': datetime.now().isoformat()
+        }
+
+        with agent_state.lock:
+            agent_state.current_goals.insert(0, new_goal)
+            agent_state.current_goals = agent_state.current_goals[:5]
+
+        agent_name = agent_manager.agents[agent_id]['name']
+        affected_agents.append(agent_name)
+        print(f"[{agent_name}] Broadcast goal: {new_goal['description']}")
+
+    return {
+        "goal": goal.get('description'),
+        "affected_agents": affected_agents,
+        "message": f"Goal broadcast to {len(affected_agents)} agents"
+    }
+
+
+# Mission Control Endpoints
+
+@app.post("/mission/start")
+async def start_mission(base_port: int = 9000):
+    """
+    Start Malmo mission with all running agents.
+
+    This connects running PIANO agents to actual Minecraft characters.
+    Each agent gets assigned a sequential port starting from base_port.
+
+    Args:
+        base_port: Starting port for Malmo connections (default 9000)
+
+    Returns:
+        Mission start status with connected agent count
+    """
+    global mission_active, mission_xml, env_managers
+
+    if mission_active:
+        raise HTTPException(400, "Mission already active. Stop current mission first.")
+
+    # Get all running agents
+    agents = agent_manager.list_agents()
+    running_agents = [a for a in agents if a['status'] == 'running']
+
+    if not running_agents:
+        raise HTTPException(400, "No running agents. Start agents first via /agents/{id}/start")
+
+    # Generate mission XML for all running agents
+    builder = MissionBuilder()
+    mission_xml = builder.create_benchmark_mission(num_agents=len(running_agents))
+
+    print(f"\n{'='*60}")
+    print(f"🚀 Starting Malmo Mission with {len(running_agents)} agents")
+    print(f"{'='*60}\n")
+
+    connected_agents = []
+    failed_agents = []
+
+    # Connect each agent to Malmo on sequential ports
+    for i, agent in enumerate(running_agents):
+        agent_id = agent['agent_id']
+        port = base_port + i
+
+        try:
+            # Create environment manager for this agent
+            env_manager = MalmoEnvironmentManager(
+                mission_xml=mission_xml,
+                port=port
+            )
+
+            # Connect to Malmo
+            env_manager.connect()
+
+            # Store for later cleanup and control
+            env_managers[agent_id] = env_manager
+
+            # Start the agent control loop in background
+            agent_state = agent_manager.agent_states[agent_id]
+            asyncio.create_task(
+                env_manager.run_agent_loop(
+                    agent_state=agent_state,
+                    agent_manager=agent_manager,
+                    agent_id=agent_id,
+                    max_steps=10000  # Long mission
+                )
+            )
+
+            connected_agents.append({
+                'agent_id': agent_id,
+                'name': agent['name'],
+                'port': port,
+                'status': 'connected'
+            })
+
+            print(f"✅ Agent {agent['name']} connected on port {port}")
+
+        except Exception as e:
+            failed_agents.append({
+                'agent_id': agent_id,
+                'name': agent['name'],
+                'port': port,
+                'error': str(e)
+            })
+            print(f"❌ Failed to connect {agent['name']} on port {port}: {e}")
+
+    if connected_agents:
+        mission_active = True
+        print(f"\n🎮 Mission started! {len(connected_agents)} agents in Minecraft world\n")
+
+    return {
+        "status": "mission_started" if connected_agents else "mission_failed",
+        "connected_agents": len(connected_agents),
+        "failed_agents": len(failed_agents),
+        "agents": connected_agents,
+        "failures": failed_agents,
+        "message": f"Connected {len(connected_agents)}/{len(running_agents)} agents to Malmo"
+    }
+
+
+@app.post("/mission/stop")
+async def stop_mission():
+    """
+    Stop the current Malmo mission.
+
+    Disconnects all agents from Minecraft and returns them to thinking-only mode.
+    Agents keep running their PIANO architecture but no longer control Minecraft characters.
+
+    Returns:
+        Mission stop status
+    """
+    global mission_active, mission_xml, env_managers
+
+    if not mission_active:
+        raise HTTPException(400, "No active mission to stop")
+
+    print(f"\n{'='*60}")
+    print(f"🛑 Stopping Malmo Mission")
+    print(f"{'='*60}\n")
+
+    disconnected = []
+
+    # Stop and close all environment managers
+    for agent_id, env_manager in env_managers.items():
+        try:
+            env_manager.stop()
+            env_manager.close()
+
+            agent = agent_manager.get_agent(agent_id)
+            agent_name = agent['name'] if agent else agent_id
+
+            disconnected.append({
+                'agent_id': agent_id,
+                'name': agent_name,
+                'status': 'disconnected'
+            })
+
+            print(f"✅ Disconnected {agent_name}")
+
+        except Exception as e:
+            print(f"⚠️  Error disconnecting {agent_id}: {e}")
+
+    # Clear state
+    env_managers.clear()
+    mission_active = False
+    mission_xml = None
+
+    print(f"\n🏁 Mission stopped. Agents returned to thinking-only mode.\n")
+
+    return {
+        "status": "mission_stopped",
+        "disconnected_agents": len(disconnected),
+        "agents": disconnected,
+        "message": f"Disconnected {len(disconnected)} agents from Malmo"
+    }
+
+
+@app.get("/mission/status")
+async def mission_status():
+    """
+    Get current mission status.
+
+    Returns:
+        Mission status including active state and connected agents
+    """
+    connected_count = len(env_managers)
+    connected_info = []
+
+    for agent_id, env_manager in env_managers.items():
+        agent = agent_manager.get_agent(agent_id)
+        agent_name = agent['name'] if agent else agent_id
+
+        connected_info.append({
+            'agent_id': agent_id,
+            'name': agent_name,
+            'port': env_manager.port,
+            'running': env_manager.running
+        })
+
+    return {
+        "mission_active": mission_active,
+        "connected_agents": connected_count,
+        "agents": connected_info
     }
 
 
