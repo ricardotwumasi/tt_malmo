@@ -337,7 +337,12 @@ async def broadcast_goal(goal: dict):
 # Mission Control Endpoints
 
 @app.post("/mission/start")
-async def start_mission(base_port: int = 9000):
+async def start_mission(
+    base_port: int = 9000,
+    mission_type: str = "benchmark",
+    speed: str = "1x",
+    include_spectator: bool = True
+):
     """
     Start Malmo mission with all running agents.
 
@@ -346,6 +351,9 @@ async def start_mission(base_port: int = 9000):
 
     Args:
         base_port: Starting port for Malmo connections (default 9000)
+        mission_type: Type of mission - "benchmark" or "city_building" (default benchmark)
+        speed: Game speed - "1x", "2x", "5x", "10x" (default 1x)
+        include_spectator: Add spectator agent for watching (default True, city_building only)
 
     Returns:
         Mission start status with connected agent count
@@ -362,12 +370,32 @@ async def start_mission(base_port: int = 9000):
     if not running_agents:
         raise HTTPException(400, "No running agents. Start agents first via /agents/{id}/start")
 
-    # Generate mission XML for all running agents
+    # Speed presets (MsPerTick values)
+    speed_presets = {
+        "1x": 50,   # Normal Minecraft speed
+        "2x": 25,   # Double speed
+        "5x": 10,   # 5x speed
+        "10x": 5,   # 10x speed
+    }
+    ms_per_tick = speed_presets.get(speed, 50)
+
+    # Generate mission XML based on type
     builder = MissionBuilder()
-    mission_xml = builder.create_benchmark_mission(num_agents=len(running_agents))
+
+    if mission_type == "city_building":
+        mission_xml = builder.create_city_building_mission(
+            num_agents=len(running_agents),
+            ms_per_tick=ms_per_tick,
+            include_spectator=include_spectator
+        )
+        mission_desc = f"City Building ({speed} speed)"
+    else:
+        mission_xml = builder.create_benchmark_mission(num_agents=len(running_agents))
+        mission_desc = "Standard Benchmark"
 
     print(f"\n{'='*60}")
-    print(f"🚀 Starting Malmo Mission with {len(running_agents)} agents")
+    print(f"🚀 Starting {mission_desc} with {len(running_agents)} agents")
+    print(f"   Speed: {speed} ({ms_per_tick}ms/tick)")
     print(f"{'='*60}\n")
 
     connected_agents = []
