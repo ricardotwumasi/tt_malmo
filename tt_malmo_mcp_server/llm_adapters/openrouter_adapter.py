@@ -1,13 +1,10 @@
 """
 OpenRouter Adapter - Access to multiple free-tier LLM models.
 
-OpenRouter provides a unified API gateway to many models with free tiers:
-- deepseek/deepseek-r1:free
-- thudm/glm-4-32b:free
-- meta-llama/llama-3.3-70b-instruct:free
-- and more
+OpenRouter provides a unified API gateway to many models with free tiers.
+Model availability changes - check https://openrouter.ai/models?q=:free
 
-Rate limits: 20 RPM, 50-1000 requests/day depending on model
+Rate limits: 20 RPM, varies by model
 """
 
 from typing import Optional, AsyncIterator
@@ -25,17 +22,17 @@ class OpenRouterAdapter(BaseLLMAdapter):
 
     API_BASE = "https://openrouter.ai/api/v1"
 
-    # Available free models (append :free to model name)
+    # Available free models (updated January 2025)
     FREE_MODELS = [
-        "deepseek/deepseek-r1:free",
-        "thudm/glm-4-32b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "google/gemma-2-9b-it:free",
-        "mistralai/mistral-7b-instruct:free",
+        "qwen/qwen3-coder:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+        "z-ai/glm-4.5-air:free",
+        "liquid/lfm-2.5-1.2b-instruct:free",
+        "openai/gpt-oss-20b:free",
     ]
 
     def __init__(self, api_key: str,
-                 model: str = "deepseek/deepseek-r1:free",
+                 model: str = "nvidia/nemotron-nano-9b-v2:free",
                  max_tokens: int = 1024,
                  site_url: str = "https://github.com/ricardotwumasi/tt_malmo",
                  site_name: str = "Malmo AI Benchmark"):

@@ -28,3 +28,24 @@ httpx==0.26.0
 black==23.12.1
 flake8==7.0.0
 mypy==1.8.0
+
+# Local LLM (Apple Silicon only)
+# These are optional - only needed for on-device inference on Mac
+mlx>=0.5.0; platform_system == "Darwin" and platform_machine == "arm64"
+mlx-lm>=0.5.0; platform_system == "Darwin" and platform_machine == "arm64"
+huggingface-hub>=0.20.0
+
+# Local LLM (NVIDIA GPU - Windows/Linux)
+# These are optional - only needed for vLLM-based inference
+# Install PyTorch with CUDA support first: pip install torch --index-url https://download.pytorch.org/whl/cu121
+torch>=2.1.0; platform_system != "Darwin"
+vllm>=0.6.0; platform_system != "Darwin"
+bitsandbytes>=0.41.0; platform_system != "Darwin"
+accelerate>=0.24.0; platform_system != "Darwin"
+
+# OpenAI-compatible client (for vLLM and llama.cpp servers)
+openai>=1.0.0
+
+# Optional: llama.cpp Python bindings (for hybrid CPU+GPU mode)
+# Note: Build from source with CUDA support for best performance
+# llama-cpp-python>=0.2.0; platform_system != "Darwin"

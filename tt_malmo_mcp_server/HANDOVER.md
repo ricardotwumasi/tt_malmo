@@ -9,9 +9,9 @@
 
 ## Executive Summary
 
-This project implements a multi-agent AI benchmarking system using Microsoft Project Malmo (Minecraft) as the evaluation environment. The system uses the PIANO (Parallel Information Aggregation via Neural Orchestration) cognitive architecture to coordinate multiple AI agents powered by various LLM providers (Gemini, OpenRouter, Cerebras, Cloudflare).
+This project implements a multi-agent AI benchmarking system using Microsoft Project Malmo (Minecraft) as the evaluation environment. The system uses the PIANO (Parallel Information Aggregation via Neural Orchestration) cognitive architecture to coordinate multiple AI agents powered by various LLM providers (Gemini, OpenRouter, Cerebras, Cloudflare, **Local MLX**).
 
-**Current Status:** MVP 80% complete - ready for deployment and testing.
+**Current Status:** MVP 85% complete - local LLM tested, Linux VM setup in progress.
 
 ---
 
@@ -88,6 +88,7 @@ curl http://localhost:8000/agents
 
 | Provider | Model | Free Tier | Status |
 |----------|-------|-----------|--------|
+| **Local MLX** | Qwen2.5-1.5B-Instruct-4bit | Free (on-device) | **Tested (12K decisions)** |
 | **Google Gemini** | gemini-2.5-flash-lite | Yes (15 RPM) | Tested |
 | **OpenRouter** | DeepSeek, GLM, Llama | Yes (varies) | Implemented |
 | **Cerebras** | Llama 3.1/3.3 | Yes (1M tokens/day) | Implemented |
@@ -161,6 +162,7 @@ tt_malmo/
 │   │
 │   ├── llm_adapters/               # LLM provider integrations
 │   │   ├── factory.py              # Adapter factory
+│   │   ├── local_adapter.py        # Local MLX (Apple Silicon)
 │   │   ├── gemini_adapter.py       # Google Gemini
 │   │   ├── openrouter_adapter.py   # OpenRouter (multi-model)
 │   │   ├── cerebras_adapter.py     # Cerebras
@@ -199,9 +201,24 @@ tt_malmo/
 
 ## Pending Development Tasks
 
-### Priority 1: Deploy and Test on Linux Server
+### Priority 1: Complete Linux VM Setup (In Progress)
 
-**Goal:** Get the full benchmark running on CREATE Cloud or another Linux server.
+**Goal:** Finish UTM Linux VM configuration and connect agents to Minecraft.
+
+**Current Status:** Ubuntu 22.04 ARM64 installed, desktop environment pending.
+
+**Remaining Steps:**
+1. Install XFCE desktop and lightdm
+2. Reboot into graphical environment
+3. Clone repository and build Malmo
+4. Launch Minecraft and verify connection
+5. Run agents from host Mac
+
+**Documentation:** See "Linux VM Setup (UTM)" section below
+
+### Priority 2: Deploy on CREATE Cloud
+
+**Goal:** Get the full benchmark running on CREATE Cloud for production.
 
 **Steps:**
 1. Request CREATE Cloud VM (Ubuntu 22.04, 8GB RAM)
@@ -211,14 +228,14 @@ tt_malmo/
 
 **Documentation:** See `LINUX_DEPLOYMENT.md`
 
-### Priority 2: Complete Minecraft Integration Testing
+### Priority 3: Complete Minecraft Integration Testing
 
 **Goal:** Verify agents can control Minecraft via MalmoEnv.
 
-**Current Issue:** macOS has LWJGL threading compatibility issues. Docker on Linux works.
+**Current Issue:** macOS has LWJGL threading compatibility issues. Use Linux VM or Docker.
 
 **Steps:**
-1. Deploy on Linux (Docker)
+1. Deploy on Linux (VM or Docker)
 2. Start Minecraft with Malmo mod
 3. Connect agents via environment manager
 4. Verify action execution
@@ -368,6 +385,127 @@ pytest tests/ -v --cov=. --cov-report=term-missing
 
 ---
 
+## Local LLM (Apple Silicon)
+
+### Overview
+
+The `local` LLM provider uses **MLX** (Apple's ML framework) for fully on-device inference on Apple Silicon Macs. No API calls or internet required.
+
+### Configuration
+
+- **Model:** `mlx-community/Qwen2.5-1.5B-Instruct-4bit` (~1GB download, ~1.5GB RAM)
+- **Framework:** MLX + mlx-lm
+- **Requirements:** Apple Silicon Mac (M1/M2/M3/M4)
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `llm_adapters/local_adapter.py` | LocalAdapter class with async MLX inference |
+| `llm_adapters/factory.py` | Updated with 'local' provider support |
+
+### Technical Details
+
+```python
+# Chat template (Qwen ChatML format)
+<|im_start|>system
+{system_prompt}<|im_end|>
+<|im_start|>user
+{prompt}<|im_end|>
+<|im_start|>assistant
+```
+
+**Threading:** Uses `threading.Lock()` to serialize GPU operations (Metal safety)
+
+**Caching:** Models cached at `~/hf_cache/` (HF_HOME environment variable)
+
+### Test Results (January 2025)
+
+Two agents ran successfully for extended testing:
+- **LocalExplorer:** 5,993 decisions
+- **LocalBuilder:** 5,988 decisions
+- **Total:** ~12,000 decisions with no crashes
+
+---
+
+## Linux VM Setup (UTM)
+
+For running Minecraft/Malmo on Apple Silicon, use a Linux VM via UTM.
+
+### 1. Install UTM
+
+Download from: https://mac.getutm.app/ or `brew install --cask utm`
+
+### 2. Create Ubuntu VM
+
+1. Open UTM → Create New VM → Virtualize
+2. Select **Linux**
+3. Download Ubuntu 22.04 ARM64 Server:
+   ```bash
+   curl -L -o ~/Downloads/ubuntu-22.04-arm64.iso \
+     "https://cdimage.ubuntu.com/releases/22.04/release/ubuntu-22.04.5-live-server-arm64.iso"
+   ```
+4. Configure VM:
+   - **RAM:** 8192 MB
+   - **CPU Cores:** 4
+   - **Storage:** 64 GB
+   - **Hardware OpenGL:** Enabled (tick)
+   - **Open VM settings:** Tick
+
+5. Boot and install Ubuntu:
+   - Username/Password: `malmo` / `malmo`
+   - Install OpenSSH Server: Yes
+   - Featured snaps: Skip all
+
+### 3. Post-Install Configuration
+
+After reboot, at the console:
+
+```bash
+# 1. Get IPv4 address
+sudo dhclient enp0s1
+
+# 2. Update and install desktop + Java 8
+sudo apt update && sudo apt install -y xfce4 xfce4-goodies lightdm openjdk-8-jdk git
+
+# 3. Enable display manager
+sudo systemctl enable lightdm
+
+# 4. Reboot into desktop
+sudo reboot
+```
+
+### 4. Install Malmo in VM
+
+```bash
+# Clone project
+git clone --recurse-submodules https://github.com/ricardotwumasi/tt_malmo.git
+cd tt_malmo/malmo
+
+# Build Minecraft client
+cd Minecraft
+./gradlew build
+
+# Launch Minecraft with Malmo
+./launchClient.sh -port 9000
+```
+
+### 5. Connect from Host Mac
+
+```bash
+# Find VM IP
+ssh malmo@<vm-ip> "hostname -I"
+
+# Update .env on host
+MALMO_HOST=<vm-ip>
+MALMO_PORT=9000
+
+# Run agents
+python run_demo.py --llm local --port 9000
+```
+
+---
+
 ## Deployment Options
 
 ### Option 1: Docker (Recommended)
@@ -436,15 +574,179 @@ python -m uvicorn mcp_server.server:app --host 0.0.0.0 --port 8000
 For the receiving developer:
 
 - [ ] Successfully clone repository with submodules
-- [ ] Set up local development environment
+- [ ] Set up local development environment (arm64 venv on Apple Silicon)
 - [ ] Run test suite (all tests pass)
 - [ ] Start MCP server locally
 - [ ] Create and list agents via API
 - [ ] Understand PIANO architecture
 - [ ] Review pending tasks above
-- [ ] Access to API keys (Gemini recommended)
+- [ ] Test local LLM adapter (Apple Silicon only)
+- [ ] Set up Linux VM for Minecraft (see UTM section)
+- [ ] Access to API keys (Gemini recommended, or use local)
 
 ---
 
-**Last Updated:** 2025-01-29
-**Version:** 2.0
+**Last Updated:** 2026-02-05
+**Version:** 2.3
+
+### Changelog
+- **2.3** (2026-02-05): City Building Benchmark tested extensively. Major stability fixes. Death/respawn still needs work.
+- **2.2** (2026-02-03): Windows deployment on NVIDIA L40S VM (see below)
+- **2.1** (2025-01-30): Added Local LLM (MLX) adapter, UTM Linux VM setup guide, test results
+- **2.0** (2025-01-29): Initial comprehensive handover document
+
+---
+
+## Windows Deployment Update (February 2026)
+
+### Current Environment
+- **Machine:** er-prj-393-vm02.kclad.ds.kcl.ac.uk
+- **GPU:** NVIDIA L40S (46GB VRAM) - verified working
+- **RAM:** 710GB
+- **Path:** `C:\Users\k1812261\claude_code\tt_project_malmo`
+
+### What's Ready
+| Component | Status |
+|-----------|--------|
+| Python 3.11.9 | Installed |
+| Virtual env (`venv_win`) | Created with all deps |
+| PyTorch 2.5.1+cu121 | Working (GPU verified) |
+| Server dependencies | All installed |
+| Ollama adapter | Added for easy local LLM |
+| Batch scripts | Created for easy startup |
+| Minecraft/Malmo | Working on ports 9000-9002 |
+
+### Quick Commands
+```powershell
+cd C:\Users\k1812261\claude_code\tt_project_malmo\tt_project_malmo\tt_malmo_mcp_server
+
+# Start MCP Server
+./venv_win/Scripts/python.exe -m uvicorn mcp_server.server:app --host 0.0.0.0 --port 8080
+
+# Start Dashboard (optional)
+./venv_win/Scripts/python.exe -m streamlit run dashboard.py
+
+# Launch benchmark
+./venv_win/Scripts/python.exe run_city_benchmark.py --speed 2x --agents 3 --no-spectator --time-limit 60
+```
+
+### Launching Minecraft Instances
+Each agent needs its own Minecraft instance. Edit `run/config/malmomodCLIENT.cfg` for each port:
+```bash
+cd tt_project_malmo\malmo\Minecraft
+
+# Edit config: I:portOverride=9000 (or 9001, 9002)
+# Then launch:
+./gradlew runClient
+```
+
+---
+
+## City Building Benchmark - Session Report (2026-02-05)
+
+### What Was Tested
+3 PIANO agents (Alice, Bob, Charlie) running at 2x speed, building a city collaboratively for ~60 hours.
+
+### Fixes Applied During Session
+
+| Issue | Root Cause | Fix Applied | File |
+|-------|------------|-------------|------|
+| Agents stuck at (0,0,4,0) | `_process_observation()` ignored MalmoEnv info JSON | Parse info string for real position/inventory | `environment_manager.py` |
+| Agents not moving | Single-tick commands insufficient | Execute 10 ticks per movement command | `environment_manager.py` |
+| Turn oscillation | `turn ±1` for 10 ticks overshoots at 180°/sec | Proportional turning based on yaw error | `environment_manager.py` |
+| Agents walk away forever | No boundary enforcement | Nav override at 50-block radius | `environment_manager.py` |
+| Agents stuck in holes | No underground detection | Jump when y < 3 | `environment_manager.py` |
+| Empty observations | MalmoEnv returns empty info transiently | Last-known-good observation cache | `environment_manager.py` |
+| Mining through ground | `attack 1` while looking down | Reset pitch before/after every action | `environment_manager.py` |
+| Void death | Agents mined through bedrock | Barrier floor at y=0 in mission XML | `mission_builder.py` |
+| Can't die anyway | Survival mode allows damage | Changed to Creative mode | `mission_builder.py` |
+| Inventory not visible | Missing observation handler | Added `ObservationFromFullInventory` | `mission_builder.py` |
+| Empty map | Sparse resources | Generated 400+ resource blocks | `mission_builder.py` |
+
+### Current State
+- All three agents run stably for thousands of steps
+- Navigation override keeps agents in building area
+- Stuck detection + recovery works
+- Death detection implemented but **respawn fails mid-mission**
+
+### CRITICAL TODO: Fix Agent Respawn
+
+**Problem:** When an agent dies, `reset()` is called but fails because MalmoEnv's reset tries to start a new mission. During an active multi-agent mission, this doesn't work.
+
+**Attempted:** `env.reset()` mid-mission → fails with connection error
+
+**Options to Fix:**
+
+1. **Adventure Mode** (RECOMMENDED):
+   - Change `mode="Creative"` to `mode="Adventure"` in mission XML
+   - Adventure mode: Can use/place blocks but cannot break them
+   - Prevents mining through ground entirely
+   - File: `mission_builder.py` line ~230
+
+2. **MalmoEnv Reconnection:**
+   - Create new `malmoenv.make()` instance
+   - Call `init()` with same mission XML, same role
+   - Should rejoin existing mission
+   - Untested, may need Malmo source changes
+
+3. **Gamerules in Mission XML:**
+   - Add `<gamerules><rule name="keepInventory">true</rule></gamerules>`
+   - Add `<rule name="naturalRegeneration">true</rule>`
+   - Not sure if Malmo supports these in XML
+
+### Key Files Modified
+
+**`malmo_integration/environment_manager.py`** - Main control loop:
+- `step()` - Added last-good-obs cache, done coercion
+- `_process_observation()` - Flags `_info_empty`, parses inventory
+- `_run_agent_loop_blocking()` - Death detection, stuck detection, nav override, pitch reset
+- `_execute_return_step()` - Proportional turning for nav return
+- `_is_underground()`, `_needs_return_to_center()` - Helper checks
+
+**`malmo_integration/mission_builder.py`** - Mission generation:
+- Creative mode for agents
+- Barrier floor generator string
+- Rich resource generation (400+ blocks)
+- ObservationFromFullInventory enabled
+
+**`run_city_benchmark.py`** - Launcher:
+- `--time-limit` flag (default 60 hours)
+- Non-interactive mode (handles EOFError)
+
+### Monitoring the Benchmark
+
+```bash
+# Check agent activity
+curl http://localhost:8080/agents
+
+# Check mission status
+curl http://localhost:8080/mission/status
+
+# View dashboard
+http://localhost:8501
+
+# Tail MCP server logs (find task ID from background process)
+tail -f /path/to/task/output
+```
+
+### Stopping the Benchmark
+
+```bash
+curl -X POST http://localhost:8080/mission/stop
+```
+
+---
+
+## Resources
+
+- **Microsoft Malmo:** https://github.com/microsoft/malmo
+- **MalmoEnv:** Gym-compatible Malmo wrapper
+- **Ollama:** https://ollama.ai
+- **Qwen 2.5 Coder 32B:** Local LLM via Ollama
+
+---
+
+## Contact
+
+**Primary:** ricardo.twumasi@kcl.ac.uk
+**GitHub Issues:** https://github.com/ricardotwumasi/tt_malmo/issues

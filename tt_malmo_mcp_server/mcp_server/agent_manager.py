@@ -96,6 +96,10 @@ class AgentManager:
         # Create Cognitive Controller
         cognitive_controller = CognitiveController(llm_adapter, decision_interval=5.0)
 
+        # Give the cognitive controller access to all agent states
+        # so it can include other agents' positions/actions in the prompt
+        CognitiveController.set_agent_manager(self)
+
         # Store agent data
         self.agents[agent_id] = {
             'agent_id': agent_id,

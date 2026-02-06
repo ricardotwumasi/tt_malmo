@@ -83,7 +83,8 @@ class MissionBuilder:
                                     time_limit_hours: float) -> str:
         """Create server section for city building."""
         time_limit_ms = int(time_limit_hours * 3600 * 1000)
-        half_size = world_size // 2
+
+        resources_xml = self._generate_city_resources()
 
         return f'''    <ServerSection>
         <ServerInitialConditions>
@@ -96,36 +97,15 @@ class MissionBuilder:
         </ServerInitialConditions>
 
         <ServerHandlers>
-            <!-- Flat superflat world for building -->
+            <!-- Flat superflat world for building.
+                 Bottom layer is barrier (unbreakable even in Creative)
+                 to prevent agents falling into void. -->
             <FlatWorldGenerator
-                generatorString="3;minecraft:bedrock,2*minecraft:dirt,minecraft:grass;1;"
-                forceReset="false"/>
+                generatorString="3;minecraft:barrier,minecraft:bedrock,2*minecraft:dirt,minecraft:grass;1;"
+                forceReset="true"/>
 
             <DrawingDecorator>
-                <!-- Clear flat building area -->
-                <DrawCuboid x1="-{half_size}" y1="4" z1="-{half_size}" x2="{half_size}" y2="4" z2="{half_size}" type="grass"/>
-
-                <!-- Stone foundation area in center -->
-                <DrawCuboid x1="-50" y1="3" z1="-50" x2="50" y2="3" z2="50" type="stone"/>
-
-                <!-- Resource stockpiles around the edges -->
-                <!-- Wood stockpile -->
-                <DrawCuboid x1="-60" y1="4" z1="-60" x2="-55" y2="10" z2="-55" type="oak_log"/>
-                <!-- Stone stockpile -->
-                <DrawCuboid x1="55" y1="4" z1="-60" x2="60" y2="10" z2="-55" type="cobblestone"/>
-                <!-- Brick stockpile -->
-                <DrawCuboid x1="-60" y1="4" z1="55" x2="-55" y2="10" z2="60" type="brick_block"/>
-                <!-- Glass stockpile -->
-                <DrawCuboid x1="55" y1="4" z1="55" x2="60" y2="8" z2="60" type="glass"/>
-
-                <!-- Trees for wood -->
-                <DrawTree x="-70" y="4" z="0" type="oak"/>
-                <DrawTree x="70" y="4" z="0" type="oak"/>
-                <DrawTree x="0" y="4" z="-70" type="oak"/>
-                <DrawTree x="0" y="4" z="70" type="oak"/>
-
-                <!-- Central marker (town square) -->
-                <DrawBlock x="0" y="4" z="0" type="gold_block"/>
+{resources_xml}
             </DrawingDecorator>
 
             <ServerQuitFromTimeUp timeLimitMs="{time_limit_ms}" description="{time_limit_hours} hour time limit"/>
@@ -133,6 +113,112 @@ class MissionBuilder:
     </ServerSection>
 
 '''
+
+    def _generate_city_resources(self) -> str:
+        """Generate a rich, resource-filled building area using only DrawBlock.
+
+        Creates:
+        - Stone plaza floor around center (11x11)
+        - Gold center marker + glowstone boundary markers
+        - Four material stockpiles at compass points (cobblestone, planks, brick, sandstone)
+        - Ore deposits (iron, coal, diamond)
+        - Wood supply (stacked logs)
+        - Water feature (small pond)
+        - Building plot corner markers
+        - Torches for lighting
+        """
+        blocks = []
+
+        # --- Central stone plaza (11x11, replaces grass at y=3) ---
+        for x in range(-5, 6):
+            for z in range(-5, 6):
+                blocks.append(f'<DrawBlock x="{x}" y="3" z="{z}" type="stone"/>')
+
+        # Gold center marker on top of plaza
+        blocks.append('<DrawBlock x="0" y="4" z="0" type="gold_block"/>')
+
+        # --- Boundary markers (glowstone at 40-block radius) ---
+        for x, z in [(-40, -40), (40, -40), (-40, 40), (40, 40),
+                      (-40, 0), (40, 0), (0, -40), (0, 40)]:
+            blocks.append(f'<DrawBlock x="{x}" y="4" z="{z}" type="glowstone"/>')
+
+        # --- Material stockpile: COBBLESTONE (north, z=-20) ---
+        for x in range(-2, 3):
+            for z in range(-22, -18):
+                for y in [4, 5]:
+                    blocks.append(f'<DrawBlock x="{x}" y="{y}" z="{z}" type="cobblestone"/>')
+
+        # --- Material stockpile: PLANKS (east, x=20) ---
+        for x in range(18, 22):
+            for z in range(-2, 3):
+                for y in [4, 5]:
+                    blocks.append(f'<DrawBlock x="{x}" y="{y}" z="{z}" type="planks"/>')
+
+        # --- Material stockpile: BRICK (south, z=20) ---
+        for x in range(-2, 3):
+            for z in range(18, 22):
+                for y in [4, 5]:
+                    blocks.append(f'<DrawBlock x="{x}" y="{y}" z="{z}" type="brick_block"/>')
+
+        # --- Material stockpile: SANDSTONE (west, x=-20) ---
+        for x in range(-22, -18):
+            for z in range(-2, 3):
+                for y in [4, 5]:
+                    blocks.append(f'<DrawBlock x="{x}" y="{y}" z="{z}" type="sandstone"/>')
+
+        # --- Iron ore deposit (NW corner) ---
+        for x in range(-32, -28):
+            for z in range(-32, -28):
+                blocks.append(f'<DrawBlock x="{x}" y="3" z="{z}" type="iron_ore"/>')
+
+        # --- Coal ore deposit (NE corner) ---
+        for x in range(28, 32):
+            for z in range(-32, -28):
+                blocks.append(f'<DrawBlock x="{x}" y="3" z="{z}" type="coal_ore"/>')
+
+        # --- Diamond ore (rare, SE corner) ---
+        for x in range(28, 30):
+            for z in range(28, 30):
+                blocks.append(f'<DrawBlock x="{x}" y="3" z="{z}" type="diamond_ore"/>')
+
+        # --- Wood supply: stacked logs (NW, near iron) ---
+        for x in range(-15, -10):
+            for y in [4, 5, 6]:
+                blocks.append(f'<DrawBlock x="{x}" y="{y}" z="-15" type="log"/>')
+
+        # --- Wood supply: second stack (NE) ---
+        for x in range(10, 15):
+            for y in [4, 5, 6]:
+                blocks.append(f'<DrawBlock x="{x}" y="{y}" z="-15" type="log"/>')
+
+        # --- Water feature: small pond (SE quadrant) ---
+        for x in range(10, 15):
+            for z in range(10, 15):
+                blocks.append(f'<DrawBlock x="{x}" y="3" z="{z}" type="water"/>')
+
+        # --- Building plot markers (sandstone corners showing 8x8 plots) ---
+        plots = [(-15, -10), (8, -10), (-15, 8), (-35, -10), (25, -10)]
+        for px, pz in plots:
+            for dx, dz in [(0, 0), (7, 0), (0, 7), (7, 7)]:
+                blocks.append(f'<DrawBlock x="{px+dx}" y="4" z="{pz+dz}" type="sandstone"/>')
+
+        # --- Torch lighting around the plaza and stockpiles ---
+        torch_positions = [
+            (-6, -6), (6, -6), (-6, 6), (6, 6),          # plaza corners
+            (0, -23), (0, 23), (-23, 0), (23, 0),         # stockpile markers
+            (-20, -20), (20, -20), (-20, 20), (20, 20),   # midpoints
+        ]
+        for tx, tz in torch_positions:
+            blocks.append(f'<DrawBlock x="{tx}" y="4" z="{tz}" type="torch"/>')
+
+        # --- Extra glass and wool for decoration ---
+        for x in range(-2, 3):
+            blocks.append(f'<DrawBlock x="{x}" y="4" z="25" type="glass"/>')
+        for z in range(-2, 3):
+            blocks.append(f'<DrawBlock x="-25" y="4" z="{z}" type="wool"/>')
+
+        indent = '                '
+        return '\n'.join(f'{indent}{b}' for b in blocks)
 
     def _create_builder_agent_section(self, agent_idx: int, total_agents: int,
                                       world_size: int) -> str:
@@ -143,64 +229,35 @@ class MissionBuilder:
         wool_colors = ["white", "orange", "light_blue", "lime", "pink", "gray"]
         wool_color = wool_colors[agent_idx % len(wool_colors)]
 
-        return f'''    <AgentSection mode="Survival">
+        return f'''    <AgentSection mode="Creative">
         <Name>Builder{agent_idx}</Name>
 
         <AgentStart>
             <Placement x="{spawn_x}" y="{spawn_y}" z="{spawn_z}" pitch="0" yaw="{agent_idx * 120}"/>
             <Inventory>
-                <!-- Building tools -->
-                <InventoryItem slot="0" type="diamond_pickaxe"/>
-                <InventoryItem slot="1" type="diamond_axe"/>
-                <InventoryItem slot="2" type="diamond_shovel"/>
-
-                <!-- Primary building materials -->
-                <InventoryItem slot="3" type="cobblestone" quantity="64"/>
-                <InventoryItem slot="4" type="oak_planks" quantity="64"/>
-                <InventoryItem slot="5" type="brick_block" quantity="64"/>
-                <InventoryItem slot="6" type="glass" quantity="64"/>
-                <InventoryItem slot="7" type="wool" variant="{wool_color}" quantity="64"/>
-                <InventoryItem slot="8" type="torch" quantity="64"/>
-
-                <!-- Additional materials in backpack -->
-                <InventoryItem slot="9" type="oak_stairs" quantity="64"/>
-                <InventoryItem slot="10" type="stone_slab" quantity="64"/>
-                <InventoryItem slot="11" type="oak_door" quantity="16"/>
-                <InventoryItem slot="12" type="ladder" quantity="64"/>
-                <InventoryItem slot="13" type="fence" quantity="64"/>
-                <InventoryItem slot="14" type="crafting_table" quantity="1"/>
+                <InventoryBlock quantity="1" slot="0" type="diamond_pickaxe"/>
+                <InventoryBlock quantity="1" slot="1" type="diamond_axe"/>
+                <InventoryBlock quantity="64" slot="2" type="cobblestone"/>
+                <InventoryBlock quantity="64" slot="3" type="planks"/>
+                <InventoryBlock quantity="64" slot="4" type="brick_block"/>
+                <InventoryBlock quantity="64" slot="5" type="glass"/>
+                <InventoryBlock quantity="64" slot="6" type="torch"/>
             </Inventory>
         </AgentStart>
 
         <AgentHandlers>
-            <!-- Observations -->
             <ObservationFromFullStats/>
-
-            <ObservationFromNearbyEntities>
-                <Range name="entities" xrange="30" yrange="15" zrange="30"/>
-            </ObservationFromNearbyEntities>
-
+            <ObservationFromFullInventory/>
             <ObservationFromGrid>
                 <Grid name="surroundings">
                     <min x="-3" y="-1" z="-3"/>
                     <max x="3" y="3" z="3"/>
                 </Grid>
             </ObservationFromGrid>
-
-            <ObservationFromRay/>
-            <ObservationFromChat/>
-
-            <!-- Actions -->
             <ContinuousMovementCommands turnSpeedDegs="180"/>
-            <DiscreteMovementCommands/>
             <InventoryCommands/>
-            <ChatCommands/>
-            <SimpleCraftCommands/>
-            <PlaceCommands/>
             <MissionQuitCommands/>
-
-            <!-- Video for agent vision -->
-            <VideoProducer want_depth="true">
+            <VideoProducer want_depth="false">
                 <Width>320</Width>
                 <Height>240</Height>
             </VideoProducer>
@@ -306,7 +363,7 @@ class MissionBuilder:
             <!-- Flat world with resources -->
             <FlatWorldGenerator
                 generatorString="3;minecraft:bedrock,2*minecraft:dirt,minecraft:grass;1;village"
-                forceReset="false"/>
+                forceReset="true"/>
 
             <DrawingDecorator>
                 {self._generate_resources(world_size)}
@@ -332,27 +389,15 @@ class MissionBuilder:
         """
         resources = ""
 
-        # Place trees (wood resource)
-        for i in range(20):
-            x = (i % 5) * 20 - 40
-            z = (i // 5) * 20 - 40
-            resources += f'''
-                <DrawTree x="{x}" y="4" z="{z}" type="oak"/>'''
-
-        # Place stone and ore deposits
+        # Place marker blocks for resource areas (DrawBlock only)
+        # DrawCuboid/DrawTree cause Minecraft state issues after multiple mission cycles
         resources += '''
-                <DrawCuboid x1="-50" y1="1" z1="-50" x2="50" y2="2" z2="50" type="stone"/>
-                <DrawCuboid x1="-30" y1="1" z1="-30" x2="-25" y2="1" z2="-25" type="iron_ore"/>
-                <DrawCuboid x1="25" y1="1" z1="25" x2="30" y2="1" z2="30" type="coal_ore"/>
-'''
-
-        # Place animals (food source)
-        animals = ["cow", "pig", "sheep", "chicken"]
-        for i, animal in enumerate(animals):
-            x = (i - 2) * 15
-            z = 30
-            resources += f'''
-                <DrawEntity x="{x}" y="4" z="{z}" type="{animal}"/>'''
+                <DrawBlock x="-40" y="4" z="-40" type="oak_log"/>
+                <DrawBlock x="-20" y="4" z="-40" type="oak_log"/>
+                <DrawBlock x="0" y="4" z="-40" type="oak_log"/>
+                <DrawBlock x="20" y="4" z="-40" type="oak_log"/>
+                <DrawBlock x="-30" y="4" z="-30" type="iron_ore"/>
+                <DrawBlock x="25" y="4" z="25" type="coal_ore"/>'''
 
         return resources
 
@@ -379,8 +424,8 @@ class MissionBuilder:
             <Placement x="{spawn_x}" y="{spawn_y}" z="{spawn_z}" pitch="0" yaw="{agent_idx * 30}"/>
             <Inventory>
                 <!-- Start with basic tools -->
-                <InventoryItem slot="0" type="wooden_pickaxe"/>
-                <InventoryItem slot="1" type="wooden_axe"/>
+                <InventoryBlock quantity="1" slot="0" type="wooden_pickaxe"/>
+                <InventoryBlock quantity="1" slot="1" type="wooden_axe"/>
             </Inventory>
         </AgentStart>
 
@@ -433,8 +478,8 @@ class MissionBuilder:
         Returns:
             (x, y, z) spawn coordinates
         """
-        # Spawn in circle with radius 20 blocks
-        radius = 20.0
+        # Spawn in circle with radius 10 blocks
+        radius = 10.0
         angle = (2 * math.pi * agent_idx) / total_agents
 
         x = radius * math.cos(angle)

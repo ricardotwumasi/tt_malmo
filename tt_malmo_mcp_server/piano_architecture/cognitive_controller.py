@@ -171,55 +171,88 @@ class CognitiveController:
 
         return "No insight available"
 
+    # Valid actions the LLM can choose from. Maps action name -> Malmo command.
+    ACTION_MENU = {
+        'move_forward':   'move 1',
+        'turn_left':      'turn -1',
+        'turn_right':     'turn 1',
+        'place_block':    'use 1',
+        'mine_block':     'attack 1',
+        'jump_forward':   'jump 1',
+        'select_slot_3':  'hotbar.3 1',   # cobblestone
+        'select_slot_4':  'hotbar.4 1',   # wood planks
+        'select_slot_5':  'hotbar.5 1',   # brick blocks
+        'select_slot_6':  'hotbar.6 1',   # glass
+        'select_slot_7':  'hotbar.7 1',   # torches
+        'look_around':    'turn 1',
+        'wait':           'move 0',
+    }
+
+    # Reference to agent_manager for cross-agent awareness (set externally)
+    _agent_manager = None
+
+    @classmethod
+    def set_agent_manager(cls, agent_manager):
+        """Allow the cognitive controller to read other agents' states."""
+        cls._agent_manager = agent_manager
+
     def _construct_decision_prompt(self, relevant_info: Dict[str, Any],
                                    agent_state: AgentState) -> str:
         """
-        Construct the LLM prompt for decision-making.
+        Construct the LLM prompt with a constrained action menu.
 
-        Args:
-            relevant_info: Filtered information from bottleneck
-            agent_state: Current agent state
-
-        Returns:
-            Formatted prompt string
+        Includes last action context so the LLM knows to progress through
+        the build cycle (select → place → move → turn → place → ...).
+        Also includes other agents' positions for coordination.
         """
-        prompt = f"""You are {relevant_info['agent_identity']['name']}, an autonomous agent in a Minecraft world.
+        goals_text = self._format_goals(relevant_info['current_goals'])
+        loc = relevant_info['current_state']['location']
 
-Your traits: {', '.join(relevant_info['agent_identity']['traits'])}
-Your role: Agent {relevant_info['agent_identity']['role']}
+        # Last action context — critical so the LLM doesn't repeat itself
+        last = agent_state.last_action or {}
+        last_action_name = last.get('action', 'none')
+        last_action_text = f"Your last action was: {last_action_name}"
 
-## Current State
-Location: {relevant_info['current_state']['location']}
-Health: {relevant_info['current_state']['health']:.1f}/20
-Hunger: {relevant_info['current_state']['hunger']:.1f}/20
-Inventory items: {relevant_info['current_state']['inventory_items']}
+        # Other agents' positions and last actions for coordination
+        other_agents_text = self._format_other_agents(agent_state)
 
-## Nearby Agents
-{self._format_nearby_agents(relevant_info['nearby_agents'])}
+        prompt = f"""You are {relevant_info['agent_identity']['name']} building in Minecraft Creative mode.
+Location: {loc}. {last_action_text}
+{other_agents_text}
 
-## Recent Memory
-{self._format_recent_memory(relevant_info['recent_memory'])}
+Actions: move_forward, turn_left, turn_right, place_block, mine_block, jump_forward, select_slot_3 (cobblestone), select_slot_4 (wood planks), select_slot_5 (brick), select_slot_6 (glass), select_slot_7 (torch), look_around, wait
 
-## Current Goals
-{self._format_goals(relevant_info['current_goals'])}
+RULES:
+- You are ALREADY at the build site. Do NOT explore or look for a location.
+- Follow this cycle: select_slot → place_block → turn or move → place_block → repeat
+- If your last action was select_slot_*, your next MUST be place_block
+- If your last action was place_block, move_forward or turn to reposition, then place_block again
+- NEVER pick move_forward more than twice in a row
 
-## Module Insights
-{self._format_module_insights(relevant_info['module_insights'])}
-
-## Your Task
-Based on this information, decide on your next high-level action. Consider:
-1. Your survival needs (health, hunger)
-2. Your current goals
-3. The social context
-4. Your personality traits
-
-Respond with a decision in this format:
-ACTION: [high-level action]
-REASONING: [brief explanation]
-TARGET: [specific target if applicable, or "none"]
+ACTION: <name>
+REASONING: <short>
 """
-
         return prompt
+
+    def _format_other_agents(self, agent_state: AgentState) -> str:
+        """Format other agents' positions and last actions for coordination."""
+        if not self._agent_manager:
+            return "Other agents: unknown"
+
+        others = []
+        for aid, state in self._agent_manager.agent_states.items():
+            if aid == agent_state.agent_id:
+                continue
+            loc = state.current_location or {}
+            x = loc.get('x', 0)
+            z = loc.get('z', 0)
+            last = state.last_action or {}
+            last_act = last.get('action', '?')
+            others.append(f"{state.name} at ({x:.0f},{z:.0f}) doing {last_act}")
+
+        if not others:
+            return "Other agents: none nearby"
+        return "Other agents: " + "; ".join(others)
 
     def _format_nearby_agents(self, nearby_agents: List[Dict[str, Any]]) -> str:
         """Format nearby agents for prompt."""
@@ -251,35 +284,33 @@ TARGET: [specific target if applicable, or "none"]
 
     def _parse_decision(self, decision_text: str, agent_state: AgentState) -> Dict[str, Any]:
         """
-        Parse LLM decision output into structured format.
+        Parse LLM decision output, matching against the ACTION_MENU.
 
-        Args:
-            decision_text: Raw LLM output
-            agent_state: Current agent state
-
-        Returns:
-            Structured decision dictionary
+        Strips the action text and looks for an exact match in ACTION_MENU keys.
+        If no match, defaults to 'move_forward' and logs a warning.
         """
-        # Simple parsing for now - extract ACTION, REASONING, TARGET
         lines = decision_text.strip().split('\n')
 
-        action = "explore"  # Default action
+        raw_action = ""
         reasoning = ""
-        target = "none"
 
         for line in lines:
             line = line.strip()
-            if line.startswith('ACTION:'):
-                action = line.replace('ACTION:', '').strip()
-            elif line.startswith('REASONING:'):
-                reasoning = line.replace('REASONING:', '').strip()
-            elif line.startswith('TARGET:'):
-                target = line.replace('TARGET:', '').strip()
+            if line.upper().startswith('ACTION:'):
+                raw_action = line.split(':', 1)[1].strip()
+            elif line.upper().startswith('REASONING:'):
+                reasoning = line.split(':', 1)[1].strip()
+
+        # Normalize: lowercase, strip quotes/backticks/whitespace
+        action_key = raw_action.lower().strip(' `"\'')
+
+        if action_key not in self.ACTION_MENU:
+            print(f"  [WARN] LLM returned unknown action '{raw_action}', defaulting to move_forward")
+            action_key = 'move_forward'
 
         decision = {
-            'action': action.lower(),
+            'action': action_key,
             'reasoning': reasoning,
-            'target': target,
             'timestamp': datetime.now().isoformat(),
             'agent_id': agent_state.agent_id
         }
