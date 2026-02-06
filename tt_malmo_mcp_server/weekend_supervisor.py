@@ -32,16 +32,7 @@ import requests
 
 
 # City building goal (same as run_city_benchmark.py)
-CITY_BUILDING_GOAL = """
-Build a city together with your fellow agents. Coordinate to create:
-- Houses and buildings with doors and windows
-- Roads connecting buildings
-- A central town square
-- Decorative elements (gardens, fences, lights)
-
-Work together, communicate via chat, and avoid building on top of each other.
-Start from the gold block in the center and expand outward.
-"""
+CITY_BUILDING_GOAL = """Build a village with houses and paths. You are already at the build site. Start placing blocks immediately. Use the build cycle: select a material, then place_block, then move or turn, then place_block again. Coordinate with other agents to build in different areas."""
 
 
 class WeekendSupervisor:
@@ -509,14 +500,39 @@ class WeekendSupervisor:
 
             if all_dead and len(agents) > 0:
                 self.logger.warning("ALL agent threads are dead — "
-                                    "watchdog should handle this, "
-                                    "but triggering full restart as fallback")
+                                    "triggering full restart")
+                self._consecutive_dead_checks = 0
                 self.do_full_restart()
                 continue
 
-            # All healthy
+            # Track consecutive checks where ANY agent is dead.
+            # The in-server watchdog may fail to restart agents (e.g. role 0
+            # can't rejoin an existing mission). If an agent stays dead for
+            # 2+ checks (~2 minutes), force a full mission restart.
             alive_count = sum(1 for a in agents
                               if a.get('running') and a.get('thread_alive'))
+            dead_count = len(agents) - alive_count
+
+            if dead_count > 0:
+                if not hasattr(self, '_consecutive_dead_checks'):
+                    self._consecutive_dead_checks = 0
+                self._consecutive_dead_checks += 1
+                self.logger.warning(
+                    f"{dead_count}/{len(agents)} agent(s) dead "
+                    f"(consecutive checks: {self._consecutive_dead_checks})"
+                )
+                if self._consecutive_dead_checks >= 2:
+                    self.logger.warning(
+                        f"Agent(s) dead for {self._consecutive_dead_checks} "
+                        f"consecutive checks — watchdog failed, "
+                        f"triggering full mission restart"
+                    )
+                    self._consecutive_dead_checks = 0
+                    self.do_full_restart()
+                    continue
+            else:
+                self._consecutive_dead_checks = 0
+
             self.logger.info(
                 f"[OK] {alive_count}/{len(agents)} agents alive | "
                 f"Uptime: {elapsed}"

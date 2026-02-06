@@ -739,6 +739,19 @@ async def _agent_watchdog():
         if not mission_active or not env_managers:
             continue
 
+        # Check if ALL agents are dead — if so, the mission itself is over.
+        # Mark mission_active = False so the weekend_supervisor can detect it
+        # and do a full mission restart (individual rejoins will fail).
+        all_dead = all(
+            not (em._thread is not None and em._thread.is_alive())
+            for em in env_managers.values()
+        )
+        if all_dead:
+            print(f"\n[WATCHDOG] ALL {len(env_managers)} agent threads are dead — "
+                  f"marking mission inactive for full restart by weekend_supervisor")
+            mission_active = False
+            continue
+
         for agent_id, env_manager in list(env_managers.items()):
             thread_alive = (env_manager._thread is not None
                             and env_manager._thread.is_alive())
